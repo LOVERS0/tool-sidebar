@@ -1,12 +1,84 @@
 {
   "tools": [
-    { "id": "featured-onlyswitch", "name": "OnlySwitch", "subtitle": "菜单栏开关合集", "icon": "togglepower", "group": "精选", "repo": "jacklandrin/OnlySwitch" },
-    { "id": "featured-hiddenbar", "name": "Hidden Bar", "subtitle": "隐藏菜单栏图标", "icon": "menubar.rectangle", "group": "精选", "repo": "dwarvesf/hidden" },
-    { "id": "featured-zettlr", "name": "Zettlr", "subtitle": "Markdown 长文写作", "icon": "doc.text", "group": "精选", "repo": "Zettlr/Zettlr" },
-    { "id": "featured-marktext", "name": "MarkText", "subtitle": "简洁 Markdown 编辑器", "icon": "text.alignleft", "group": "精选", "repo": "marktext/marktext" },
-    { "id": "featured-joplin", "name": "Joplin", "subtitle": "隐私笔记 / 同步", "icon": "note.text", "group": "精选", "repo": "laurent22/joplin" },
-    { "id": "featured-logseq", "name": "Logseq", "subtitle": "本地优先知识库", "icon": "square.stack.3d.up", "group": "精选", "repo": "logseq/logseq" },
-    { "id": "featured-zed", "name": "Zed", "subtitle": "高性能代码编辑器", "icon": "chevron.left.forwardslash.chevron.right", "group": "精选", "repo": "zed-industries/zed" },
-    { "id": "featured-bruno", "name": "Bruno", "subtitle": "离线 API 客户端", "icon": "network", "group": "精选", "repo": "usebruno/bruno" }
+    {
+      "id": "featured-onlyswitch",
+      "name": "OnlySwitch",
+      "subtitle": "菜单栏开关合集",
+      "icon": "togglepower",
+      "group": "精选",
+      "repo": "jacklandrin/OnlySwitch"
+    },
+    {
+      "id": "featured-hiddenbar",
+      "name": "Hidden Bar",
+      "subtitle": "隐藏菜单栏图标",
+      "icon": "menubar.rectangle",
+      "group": "精选",
+      "repo": "dwarvesf/hidden"
+    },
+    {
+      "id": "featured-zettlr",
+      "name": "Zettlr",
+      "subtitle": "Markdown 长文写作",
+      "icon": "doc.text",
+      "group": "精选",
+      "repo": "Zettlr/Zettlr"
+    },
+    {
+      "id": "featured-marktext",
+      "name": "MarkText",
+      "subtitle": "简洁 Markdown 编辑器",
+      "icon": "text.alignleft",
+      "group": "精选",
+      "repo": "marktext/marktext"
+    },
+    {
+      "id": "featured-joplin",
+      "name": "Joplin",
+      "subtitle": "隐私笔记 / 同步",
+      "icon": "note.text",
+      "group": "精选",
+      "repo": "laurent22/joplin"
+    },
+    {
+      "id": "featured-logseq",
+      "name": "Logseq",
+      "subtitle": "本地优先知识库",
+      "icon": "square.stack.3d.up",
+      "group": "精选",
+      "repo": "logseq/logseq"
+    },
+    {
+      "id": "featured-zed",
+      "name": "Zed",
+      "subtitle": "高性能代码编辑器",
+      "icon": "chevron.left.forwardslash.chevron.right",
+      "group": "精选",
+      "repo": "zed-industries/zed"
+    },
+    {
+      "id": "featured-bruno",
+      "name": "Bruno",
+      "subtitle": "离线 API 客户端",
+      "icon": "network",
+      "group": "精选",
+      "repo": "usebruno/bruno"
+    },
+    {
+      "id": "featured-easydict",
+      "name": "Easydict",
+      "subtitle": "专业词典/翻译（OCR）",
+      "icon": "character.book.closed",
+      "group": "精选",
+      "repo": "tisfeng/Easydict"
+    },
+    {
+      "id": "featured-pot",
+      "name": "Pot",
+      "subtitle": "划词翻译 / OCR",
+      "icon": "translate",
+      "group": "精选",
+      "repo": "pot-app/pot-desktop"
+    }
   ]
 }
