@@ -5,8 +5,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 APP="$HOME/Applications/小工具侧边栏.app"
 BUILD="$ROOT/build"
-VERSION="1.3.0"
+VERSION="1.4.0"
 SDK="$(xcrun --show-sdk-path)"
+
+echo "== Sparkle 框架 =="
+"$ROOT/scripts/fetch-sparkle.sh" "$ROOT/vendor"
+SPARKLE="$ROOT/vendor"
 
 rm -rf "$BUILD"
 mkdir -p "$BUILD"
@@ -15,14 +19,18 @@ echo "== 编译 arm64 =="
 xcrun swiftc -O -swift-version 5 \
   -target arm64-apple-macosx13.0 \
   "$ROOT/main.swift" "$ROOT/ToolSidebar.swift" "$ROOT/Agent.swift" \
-  -framework AppKit -framework Carbon -sdk "$SDK" \
+  -framework AppKit -framework Carbon -framework Sparkle \
+  -F "$SPARKLE" -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
+  -sdk "$SDK" \
   -o "$BUILD/ToolSidebar-arm64"
 
 echo "== 编译 x86_64 =="
 xcrun swiftc -O -swift-version 5 \
   -target x86_64-apple-macosx13.0 \
   "$ROOT/main.swift" "$ROOT/ToolSidebar.swift" "$ROOT/Agent.swift" \
-  -framework AppKit -framework Carbon -sdk "$SDK" \
+  -framework AppKit -framework Carbon -framework Sparkle \
+  -F "$SPARKLE" -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
+  -sdk "$SDK" \
   -o "$BUILD/ToolSidebar-x86_64"
 
 echo "== 合并 universal =="
@@ -39,6 +47,8 @@ fi
 if [ -f "$ROOT/featured.json" ]; then
   cp "$ROOT/featured.json" "$APP/Contents/Resources/featured.json"
 fi
+mkdir -p "$APP/Contents/Frameworks"
+ditto "$ROOT/vendor/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -55,6 +65,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
+  <key>SUFeedURL</key><string>https://cdn.jsdelivr.net/gh/LOVERS0/tool-sidebar@main/appcast.xml</string>
+  <key>SUPublicEDKey</key><string>jRnhK89c0mENrR/Xh96Pw6JoF0S9P1g4ACaZLJllO68=</string>
+  <key>SUEnableAutomaticChecks</key><true/>
+  <key>SUScheduledCheckInterval</key><integer>86400</integer>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict>
