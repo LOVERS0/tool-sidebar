@@ -6,6 +6,15 @@
     <description>macOS 悬浮小工具侧边栏 + 本地安装 agent</description>
     <language>zh-CN</language>
     <item>
+      <title>Version 1.5.1</title>
+      <link>https://github.com/LOVERS0/tool-sidebar/releases/tag/v1.5.1</link>
+      <sparkle:version>1.5.1</sparkle:version>
+      <sparkle:shortVersionString>1.5.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <pubDate>Sun, 02 Nov 2026 12:54:00 +0800</pubDate>
+      <enclosure url="https://github.com/LOVERS0/tool-sidebar/releases/download/v1.5.1/ToolSidebar.zip" length="1508792" type="application/octet-stream" sparkle:edSignature="gq3dW8s4DuGRU0WnZvImwEwuSZHHWa4/1EtyedymNOdRNNCxUR1zh3flXJ5Cx4iMjurQfZXWNb8qo5epiDo2CQ==" />
+    </item>
+    <item>
       <title>Version 1.5.0</title>
       <link>https://github.com/LOVERS0/tool-sidebar/releases/tag/v1.5.0</link>
       <sparkle:version>1.5.0</sparkle:version>
@@ -13,15 +22,6 @@
       <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
       <pubDate>Sun, 02 Nov 2026 12:50:00 +0800</pubDate>
       <enclosure url="https://github.com/LOVERS0/tool-sidebar/releases/download/v1.5.0/ToolSidebar.zip" length="1508385" type="application/octet-stream" sparkle:edSignature="BN7rO+0j9OZAdHgVBTLb2NiGy0AR6MMWnIhrxz7DcuWFYdXpia4fs3GSB4a8qddRakW2wUH8JDkPE9WMEIOFBQ==" />
-    </item>
-    <item>
-      <title>Version 1.4.1</title>
-      <link>https://github.com/LOVERS0/tool-sidebar/releases/tag/v1.4.1</link>
-      <sparkle:version>1.4.1</sparkle:version>
-      <sparkle:shortVersionString>1.4.1</sparkle:shortVersionString>
-      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-      <pubDate>Sun, 02 Nov 2026 12:34:00 +0800</pubDate>
-      <enclosure url="https://github.com/LOVERS0/tool-sidebar/releases/download/v1.4.1/ToolSidebar.zip" length="1443189" type="application/octet-stream" sparkle:edSignature="P8ZFLtXJzOBLeR2OLY/oYqyNppuI3q9HnVw19JuBziFL/y7cXyGDBEi7jY4Lg9gPXxyyPahEjfmP2TCrmco3CA==" />
     </item>
   </channel>
 </rss>
