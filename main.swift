@@ -8,8 +8,8 @@ if let index = cliArguments.firstIndex(of: "--agent"), index + 1 < cliArguments.
 
 if let index = cliArguments.firstIndex(of: "--translate"), index + 1 < cliArguments.count {
     let text = cliArguments[(index + 1)...].joined(separator: " ")
-    let (result, system) = Translator.translateSync(text, toChinese: true)
-    print(system ? "[system]" : "[dictionary]")
+    let (result, provider) = Translator.translateSync(text, toChinese: true)
+    print("[\(provider.rawValue)]")
     print(result)
     exit(0)
 }
