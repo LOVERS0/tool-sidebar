@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 APP="$HOME/Applications/小工具侧边栏.app"
 BUILD="$ROOT/build"
-VERSION="1.6.0"
+VERSION="1.7.0"
 SDK="$(xcrun --show-sdk-path)"
 TRANS_LINK=()
 if [ -d "$SDK/System/Library/Frameworks/Translation.framework" ]; then
