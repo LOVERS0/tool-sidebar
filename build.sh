@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 APP="$HOME/Applications/小工具侧边栏.app"
 BUILD="$ROOT/build"
-VERSION="1.8.3"
+VERSION="1.8.4"
 SDK="$(xcrun --show-sdk-path)"
 
 echo "== Sparkle 框架 =="
