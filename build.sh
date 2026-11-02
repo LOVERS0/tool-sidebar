@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 APP="$HOME/Applications/小工具侧边栏.app"
 BUILD="$ROOT/build"
-VERSION="1.5.0"
+VERSION="1.5.1"
 SDK="$(xcrun --show-sdk-path)"
 TRANS_LINK=()
 if [ -d "$SDK/System/Library/Frameworks/Translation.framework" ]; then
@@ -69,7 +69,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
-  <key>SUFeedURL</key><string>https://cdn.jsdelivr.net/gh/LOVERS0/tool-sidebar@main/appcast.xml</string>
+  <key>SUFeedURL</key><string>https://lovers0.github.io/tool-sidebar/appcast.xml</string>
   <key>SUPublicEDKey</key><string>jRnhK89c0mENrR/Xh96Pw6JoF0S9P1g4ACaZLJllO68=</string>
   <key>SUEnableAutomaticChecks</key><true/>
   <key>SUScheduledCheckInterval</key><integer>86400</integer>
