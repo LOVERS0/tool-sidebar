@@ -150,28 +150,67 @@ enum Translator {
         return result
     }
 
-    static func translate(_ text: String, toChinese: Bool, completion: @escaping (String, Bool) -> Void) {
+    enum Provider: String {
+        case system = "系统翻译"
+        case online = "在线翻译（MyMemory）"
+        case dictionary = "内置词库"
+    }
+
+    static var onlineEnabled: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: "translationOnlineEnabled") == nil { return true }
+            return UserDefaults.standard.bool(forKey: "translationOnlineEnabled")
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "translationOnlineEnabled") }
+    }
+
+    private static let cache = NSCache<NSString, NSString>()
+
+    private static func onlineTranslate(_ text: String, toChinese: Bool) async -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            completion("", false)
-            return
+        guard !trimmed.isEmpty else { return nil }
+        let key = (toChinese ? "en|zh-CN|" : "zh-CN|en|") + trimmed
+        if let cached = cache.object(forKey: key as NSString) {
+            return cached as String
         }
-        #if canImport(Translation) && compiler(>=6.2)
-        if #available(macOS 26.0, *) {
-            Task {
-                if let result = await systemTranslate(trimmed, toChinese: toChinese) {
-                    let work = DispatchWorkItem { completion(result, true) }
-                    DispatchQueue.main.async(execute: work)
-                } else {
-                    let fallback = dictionaryTranslate(trimmed, toChinese: toChinese)
-                    let work = DispatchWorkItem { completion(fallback, false) }
-                    DispatchQueue.main.async(execute: work)
-                }
+        var components = URLComponents(string: "https://api.mymemory.translated.net/get")
+        components?.queryItems = [
+            URLQueryItem(name: "q", value: String(trimmed.prefix(450))),
+            URLQueryItem(name: "langpair", value: toChinese ? "en|zh-CN" : "zh-CN|en"),
+        ]
+        guard let url = components?.url else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let responseData = object["responseData"] as? [String: Any],
+                  let translated = responseData["translatedText"] as? String,
+                  !translated.isEmpty else {
+                return nil
             }
-            return
+            cache.setObject(translated as NSString, forKey: key as NSString)
+            return translated
+        } catch {
+            return nil
         }
-        #endif
-        completion(dictionaryTranslate(trimmed, toChinese: toChinese), false)
+    }
+
+    static func translate(_ text: String, toChinese: Bool, completion: @escaping (String, Provider) -> Void) {
+        Task {
+            let result = await translateAsync(text, toChinese: toChinese)
+            let work = DispatchWorkItem { completion(result.0, result.1) }
+            DispatchQueue.main.async(execute: work)
+        }
+    }
+
+    static func translateAsync(_ text: String, toChinese: Bool) async -> (String, Provider) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return ("", .dictionary) }
+        if onlineEnabled, let online = await onlineTranslate(trimmed, toChinese: toChinese) {
+            return (online, .online)
+        }
+        return (dictionaryTranslate(trimmed, toChinese: toChinese), .dictionary)
     }
 
     #if canImport(Translation) && compiler(>=6.2)
@@ -189,25 +228,22 @@ enum Translator {
     }
     #endif
 
-    static func translateSync(_ text: String, toChinese: Bool) -> (String, Bool) {
-        #if canImport(Translation) && compiler(>=6.2)
-        if #available(macOS 26.0, *) {
-            let semaphore = DispatchSemaphore(value: 0)
-            var output: String?
-            var system = false
-            Task {
-                if let result = await systemTranslate(text, toChinese: toChinese) {
-                    output = result
-                    system = true
-                }
-                semaphore.signal()
-            }
-            _ = semaphore.wait(timeout: .now() + 20)
-            if let output = output { return (output, system) }
-        }
-        #endif
-        return (dictionaryTranslate(text, toChinese: toChinese), false)
+    private final class ResultBox {
+        var value: (String, Provider)?
     }
+
+    static func translateSync(_ text: String, toChinese: Bool) -> (String, Provider) {
+        let semaphore = DispatchSemaphore(value: 0)
+        let box = ResultBox()
+        Task.detached {
+            box.value = await translateAsync(text, toChinese: toChinese)
+            semaphore.signal()
+        }
+        _ = semaphore.wait(timeout: .now() + 25)
+        if let value = box.value { return value }
+        return (dictionaryTranslate(text, toChinese: toChinese), .dictionary)
+    }
+
 }
 
 // MARK: - 翻译窗口
@@ -294,11 +330,9 @@ final class TranslatorWindowController: NSWindowController {
 
     @objc private func translateAction() {
         statusLabel.stringValue = "翻译中…"
-        Translator.translate(inputView.string, toChinese: toChinese) { [weak self] result, system in
+        Translator.translate(inputView.string, toChinese: toChinese) { [weak self] result, provider in
             self?.outputView.string = result
-            self?.statusLabel.stringValue = system
-                ? "系统翻译"
-                : "内置词库翻译（可到 系统设置 → 通用 → 语言与地区 → 翻译语言 安装中英语言包）"
+            self?.statusLabel.stringValue = provider.rawValue
         }
     }
 }
