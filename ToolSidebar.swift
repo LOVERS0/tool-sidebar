@@ -14,6 +14,7 @@ struct Tool {
     var command: String? = nil
     var repo: String? = nil
     var source: String = "builtin"
+    var manual: Bool = false
 }
 
 struct CatalogTool: Codable {
@@ -129,8 +130,8 @@ enum Toolbox {
         Tool(id: "miaoyan", name: "妙言 MiaoYan", subtitle: "本地 Markdown · 沉浸写作", icon: "text.quote", group: "写作", path: "~/Applications/MiaoYan.app", repo: "tw93/MiaoYan"),
         Tool(id: "effie", name: "Effie", subtitle: "沉浸写作 / 大纲", icon: "pencil.line", group: "写作", path: "/Applications/Effie.app"),
         Tool(id: "siyuan", name: "思源笔记", subtitle: "设定集 / 人物卡 / 世界观", icon: "books.vertical", group: "写作", repo: "siyuan-note/siyuan"),
-        Tool(id: "novelwriter", name: "novelWriter", subtitle: "小说工程 / 章节 / 情节线", icon: "list.bullet.rectangle", group: "写作", repo: "saga-soft/novelWriter"),
-        Tool(id: "typst", name: "Typst", subtitle: "排版出 PDF / 样书", icon: "doc.richtext", group: "写作", repo: "typst/typst"),
+        Tool(id: "novelwriter", name: "novelWriter", subtitle: "小说工程 / 章节 / 情节线 · 需手动下载", icon: "list.bullet.rectangle", group: "写作", url: "https://github.com/saga-soft/novelWriter/releases", repo: "saga-soft/novelWriter", manual: true),
+        Tool(id: "typst", name: "Typst", subtitle: "排版出 PDF / 样书 · 需手动下载", icon: "doc.richtext", group: "写作", url: "https://github.com/typst/typst/releases", repo: "typst/typst", manual: true),
         Tool(id: "doocsmd", name: "公众号排版 doocs/md", subtitle: "Markdown → 微信样式", icon: "doc.plaintext", group: "写作", url: "https://md.doocs.org/"),
         Tool(id: "avoidai", name: "去 AI 味 avoid-ai-writing", subtitle: "Agent Skill · 需配合 agent", icon: "eraser", group: "写作", url: "https://github.com/conorbronsdon/avoid-ai-writing"),
 
@@ -160,11 +161,25 @@ enum Toolbox {
 
 // MARK: - 启动 / 本地 agent
 
+func findInstalledApp(named name: String) -> URL? {
+    let fm = FileManager.default
+    for base in ["/Applications", NSHomeDirectory() + "/Applications"] {
+        let path = base + "/" + name + ".app"
+        if fm.fileExists(atPath: path) {
+            return URL(fileURLWithPath: path)
+        }
+    }
+    return nil
+}
+
 func launchTool(_ tool: Tool) {
     if let cmd = tool.command {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(cmd, forType: .string)
         NSSound(named: "Pop")?.play()
+        if let delegate = NSApp.delegate as? AppDelegate {
+            delegate.showToast("已复制命令：\(cmd)")
+        }
         return
     }
     if let p = tool.path {
@@ -656,7 +671,11 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     }
 
     @objc private func hideWindow() {
-        view.window?.orderOut(nil)
+        if let delegate = NSApp.delegate as? AppDelegate {
+            delegate.hideSidebar()
+        } else {
+            view.window?.orderOut(nil)
+        }
     }
 
     override func cancelOperation(_ sender: Any?) {
@@ -870,6 +889,14 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             launchTool(tool)
             return
         }
+        if let local = findInstalledApp(named: tool.name) {
+            NSWorkspace.shared.openApplication(at: local, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
+            return
+        }
+        if tool.manual, let link = tool.url, let url = URL(string: link) {
+            NSWorkspace.shared.open(url)
+            return
+        }
         if let repo = tool.repo {
             startInstall(target: repo)
             return
@@ -995,10 +1022,10 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             alert.addButton(withTitle: "好")
         } else {
             alert.messageText = "❌ \(result.error ?? result.message ?? "安装失败")"
-            alert.informativeText = result.releaseURL.map { "agent 没找到可直接安装的 macOS 包。\n发布页（可点「复制链接」）：\n\($0)" } ?? ""
+            alert.informativeText = result.releaseURL.map { "agent 没找到可直接安装的 macOS 包。\n可以打开发布页手动下载：\n\($0)" } ?? ""
             alert.addButton(withTitle: "好")
             if currentInstallTarget != nil { alert.addButton(withTitle: "重试") }
-            if result.releaseURL != nil { alert.addButton(withTitle: "复制链接") }
+            if result.releaseURL != nil { alert.addButton(withTitle: "打开发布页") }
         }
         present(alert, result: result)
     }
@@ -1021,9 +1048,8 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             guard let self = self else { return }
             if response == .alertSecondButtonReturn, let target = retryTarget {
                 self.startInstall(target: target)
-            } else if response == .alertThirdButtonReturn, let link = result?.releaseURL {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(link, forType: .string)
+            } else if response == .alertThirdButtonReturn, let link = result?.releaseURL, let url = URL(string: link) {
+                NSWorkspace.shared.open(url)
             }
         }
     }
@@ -1103,11 +1129,70 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     }
 }
 
+// MARK: - 悬浮球
+
+final class FloatingBallView: NSView {
+    var onClick: (() -> Void)?
+    var onMoved: ((NSPoint) -> Void)?
+    private var moved = false
+    private var hover = false
+    private var tracking: NSTrackingArea?
+
+    override func draw(_ dirtyRect: NSRect) {
+        let circle = NSBezierPath(ovalIn: bounds.insetBy(dx: 3, dy: 3))
+        NSColor(calibratedWhite: hover ? 0.18 : 0.10, alpha: 0.94).setFill()
+        circle.fill()
+        NSColor.white.withAlphaComponent(0.18).setStroke()
+        circle.lineWidth = 1
+        circle.stroke()
+        if let image = NSImage(systemSymbolName: "square.grid.2x2.fill", accessibilityDescription: "小工具")?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [.white])) {
+            let size = image.size
+            image.draw(in: NSRect(x: (bounds.width - size.width) / 2,
+                                  y: (bounds.height - size.height) / 2,
+                                  width: size.width, height: size.height))
+        }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let old = tracking { removeTrackingArea(old) }
+        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways], owner: self, userInfo: nil)
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    override func mouseEntered(with event: NSEvent) { hover = true; needsDisplay = true }
+    override func mouseExited(with event: NSEvent) { hover = false; needsDisplay = true }
+
+    override func mouseDown(with event: NSEvent) { moved = false }
+
+    override func mouseDragged(with event: NSEvent) {
+        moved = true
+        guard let window = window else { return }
+        window.setFrameOrigin(NSPoint(x: window.frame.origin.x + event.deltaX,
+                                      y: window.frame.origin.y + event.deltaY))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if moved {
+            if let window = window { onMoved?(window.frame.origin) }
+        } else {
+            onClick?()
+        }
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+}
+
 // MARK: - App 入口
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var window: NSWindow!
     var statusItem: NSStatusItem?
+    var ballWindow: NSPanel?
     private var hotKeyRef: EventHotKeyRef?
     private var hotKeyHandler: EventHandlerRef?
     private let silentMode = CommandLine.arguments.contains("--silent")
@@ -1120,9 +1205,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         buildStatusItem()
         registerHotKey()
-        if !silentMode {
+        if silentMode {
+            showBall()
+        } else {
             NSApp.activate(ignoringOtherApps: true)
         }
+    }
+
+    func showToast(_ message: String) {
+        let width: CGFloat = 300
+        let height: CGFloat = 44
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.level = .floating
+        panel.hasShadow = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+
+        let effect = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        effect.material = .hudWindow
+        effect.blendingMode = .behindWindow
+        effect.state = .active
+        effect.wantsLayer = true
+        effect.layer?.cornerRadius = 12
+        effect.layer?.masksToBounds = true
+
+        let label = NSTextField(labelWithString: message)
+        label.font = .systemFont(ofSize: 12)
+        label.alignment = .center
+        label.frame = NSRect(x: 12, y: (height - 18) / 2, width: width - 24, height: 18)
+        effect.addSubview(label)
+        panel.contentView = effect
+
+        if let screen = NSScreen.main {
+            let frame = screen.visibleFrame
+            panel.setFrameOrigin(NSPoint(x: frame.midX - width / 2, y: frame.minY + 90))
+        }
+        panel.orderFront(nil)
+        let work = DispatchWorkItem { panel.orderOut(nil) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: work)
     }
 
     func registerHotKey() {
@@ -1212,32 +1338,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc func toggleWindow() {
-        if window == nil {
-            buildWindow()
-            NSApp.activate(ignoringOtherApps: true)
-            return
-        }
-        guard let window = window else { return }
-        if window.isVisible {
-            window.orderOut(nil)
+        if let window = window, window.isVisible {
+            hideSidebar()
         } else {
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+            showSidebar()
         }
     }
 
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+    func showSidebar() {
+        hideBall()
         if window == nil {
             buildWindow()
         }
-        if !flag {
-            window.makeKeyAndOrderFront(nil)
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func hideSidebar() {
+        window?.orderOut(nil)
+        showBall()
+    }
+
+    func showBall() {
+        guard ballWindow == nil else {
+            ballWindow?.orderFront(nil)
+            return
         }
+        let size: CGFloat = 58
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: size, height: size),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.level = .floating
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.hidesOnDeactivate = false
+        let ball = FloatingBallView(frame: NSRect(x: 0, y: 0, width: size, height: size))
+        ball.onClick = { [weak self] in self?.showSidebar() }
+        ball.onMoved = { origin in
+            UserDefaults.standard.set(NSStringFromPoint(origin), forKey: "ballOrigin")
+        }
+        panel.contentView = ball
+        if let saved = UserDefaults.standard.string(forKey: "ballOrigin") {
+            panel.setFrameOrigin(NSPointFromString(saved))
+        } else if let screen = NSScreen.main {
+            let frame = screen.visibleFrame
+            panel.setFrameOrigin(NSPoint(x: frame.maxX - size - 18, y: frame.midY - size / 2))
+        } else {
+            panel.center()
+        }
+        panel.orderFront(nil)
+        ballWindow = panel
+    }
+
+    func hideBall() {
+        ballWindow?.orderOut(nil)
+        ballWindow = nil
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showSidebar()
         return true
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        sender.orderOut(nil)
+        hideSidebar()
         return false
     }
 

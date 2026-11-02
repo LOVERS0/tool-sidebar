@@ -429,6 +429,10 @@ enum AgentCLI {
             } else {
                 extra["error"] = "安装失败：\(error.localizedDescription)"
             }
+            let direct = directMap[target.trimmingCharacters(in: .whitespaces)] ?? target
+            if let parsed = parseRepo(direct) {
+                extra["release_url"] = "https://github.com/\(parsed.owner)/\(parsed.repo)/releases"
+            }
             emit(extra.merging(["ok": false]) { _, new in new })
             return 1
         }
