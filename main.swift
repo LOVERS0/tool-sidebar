@@ -6,6 +6,14 @@ if let index = cliArguments.firstIndex(of: "--agent"), index + 1 < cliArguments.
     exit(AgentCLI.run(Array(cliArguments[(index + 1)...])))
 }
 
+if let index = cliArguments.firstIndex(of: "--translate"), index + 1 < cliArguments.count {
+    let text = cliArguments[(index + 1)...].joined(separator: " ")
+    let (result, system) = Translator.translateSync(text, toChinese: true)
+    print(system ? "[system]" : "[dictionary]")
+    print(result)
+    exit(0)
+}
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
