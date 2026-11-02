@@ -151,16 +151,12 @@ enum Translator {
     }
 
     enum Provider: String {
-        case system = "系统翻译"
         case online = "在线翻译（MyMemory）"
         case dictionary = "内置词库"
     }
 
     static var onlineEnabled: Bool {
-        get {
-            if UserDefaults.standard.object(forKey: "translationOnlineEnabled") == nil { return true }
-            return UserDefaults.standard.bool(forKey: "translationOnlineEnabled")
-        }
+        get { UserDefaults.standard.bool(forKey: "translationOnlineEnabled") }
         set { UserDefaults.standard.set(newValue, forKey: "translationOnlineEnabled") }
     }
 
@@ -213,20 +209,6 @@ enum Translator {
         return (dictionaryTranslate(trimmed, toChinese: toChinese), .dictionary)
     }
 
-    #if canImport(Translation) && compiler(>=6.2)
-    @available(macOS 26.0, *)
-    private static func systemTranslate(_ text: String, toChinese: Bool) async -> String? {
-        let source = Locale.Language(identifier: toChinese ? "en" : "zh-Hans")
-        let target = Locale.Language(identifier: toChinese ? "zh-Hans" : "en")
-        let session = TranslationSession(installedSource: source, target: target)
-        do {
-            let response = try await session.translate(text)
-            return response.targetText
-        } catch {
-            return nil
-        }
-    }
-    #endif
 
     private final class ResultBox {
         var value: (String, Provider)?
@@ -315,7 +297,7 @@ final class TranslatorWindowController: NSWindowController {
         statusLabel.lineBreakMode = .byTruncatingTail
         statusLabel.frame = NSRect(x: 274, y: 230, width: 232, height: 18)
         statusLabel.autoresizingMask = [.width]
-        statusLabel.stringValue = "系统语言包未安装时使用内置词库"
+        statusLabel.stringValue = "内置词库（可在 ⋯ 开启在线翻译）"
 
         inputView.string = "Clipboard history manager for macOS"
 
