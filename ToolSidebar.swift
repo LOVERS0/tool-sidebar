@@ -1081,7 +1081,9 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             if let data = self.lastJSON(output), (data["ok"] as? Bool) == true {
                 self.batchSucceeded += 1
             } else {
-                self.batchFailed.append(tool.name)
+                let reason = (self.lastJSON(output)?["error"] as? String) ?? "未知错误"
+                self.batchFailed.append("\(tool.name)：\(reason)")
+                if reason.contains("限额") { self.batchCancelled = true }
             }
             self.batchIndex += 1
             self.runNextBatch()
@@ -1099,7 +1101,9 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         alert.messageText = "批量安装完成"
         var lines = ["成功 \(batchSucceeded) 个 / 共 \(total) 个"]
         if !failed.isEmpty {
-            lines.append("失败：\(failed.joined(separator: "、"))")
+            lines.append("失败 \(failed.count) 个：")
+            lines.append(contentsOf: failed.prefix(5))
+            if failed.count > 5 { lines.append("…") }
         }
         alert.informativeText = lines.joined(separator: "\n")
         alert.addButton(withTitle: "好")
