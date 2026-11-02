@@ -65,6 +65,10 @@ enum AgentCLI {
             return remove(target: args[1])
         case "check-updates":
             return checkUpdates()
+        case "app-update-check":
+            return appUpdateCheck()
+        case "app-update":
+            return appUpdate()
         case "autostart":
             guard args.count >= 2 else { return fail("缺少动作") }
             let appPath = args.count >= 3 ? args[2] : ""
@@ -631,6 +635,72 @@ enum AgentCLI {
             }
         }
         emit(["ok": true, "updates": updates])
+        return 0
+    }
+
+    // MARK: App 自更新
+
+    static let appRepo = "LOVERS0/tool-sidebar"
+
+    static func currentAppVersion() -> String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+    }
+
+    static func appUpdateCheck() -> Int32 {
+        guard let release = api("/repos/\(appRepo)/releases/latest"),
+              let tag = release["tag_name"] as? String,
+              let assets = release["assets"] as? [[String: Any]] else {
+            return fail("检查更新失败")
+        }
+        let latest = normalizeVersion(tag)
+        let current = currentAppVersion()
+        let zipAsset = assets.first { ($0["name"] as? String)?.lowercased().hasSuffix(".zip") == true }
+        var result: [String: Any] = [
+            "ok": true,
+            "current": current,
+            "latest": latest,
+            "update": latest != current,
+            "release_url": release["html_url"] as? String ?? "",
+        ]
+        if let asset = zipAsset {
+            result["asset"] = asset["name"] as? String ?? ""
+            result["url"] = asset["browser_download_url"] as? String ?? ""
+            if let digest = asset["digest"] as? String { result["digest"] = digest }
+        }
+        emit(result)
+        return 0
+    }
+
+    static func appUpdate() -> Int32 {
+        guard let release = api("/repos/\(appRepo)/releases/latest"),
+              let assets = release["assets"] as? [[String: Any]],
+              let asset = assets.first(where: { ($0["name"] as? String)?.lowercased().hasSuffix(".zip") == true }),
+              let name = asset["name"] as? String,
+              let urlString = asset["browser_download_url"] as? String,
+              let url = URL(string: urlString) else {
+            return fail("没有找到可用的更新包")
+        }
+        let updateDir = home + "/Library/Caches/ToolSidebar/update"
+        try? FileManager.default.removeItem(atPath: updateDir)
+        try? FileManager.default.createDirectory(atPath: updateDir, withIntermediateDirectories: true)
+        let zipPath = updateDir + "/" + name
+        guard downloadWithMirror(urlString, to: URL(fileURLWithPath: zipPath)) != nil else {
+            return fail("更新包下载失败")
+        }
+        if let digest = asset["digest"] as? String, digest.hasPrefix("sha256:"),
+           let actual = sha256(zipPath) {
+            let expected = String(digest.dropFirst("sha256:".count))
+            if expected.lowercased() != actual.lowercased() {
+                return fail("更新包 SHA-256 校验失败")
+            }
+        }
+        let appDir = updateDir + "/app"
+        try? FileManager.default.createDirectory(atPath: appDir, withIntermediateDirectories: true)
+        let (code, _, _) = process("/usr/bin/ditto", ["-x", "-k", zipPath, appDir])
+        guard code == 0, let app = findApp(in: appDir) else {
+            return fail("更新包解压失败")
+        }
+        emit(["ok": true, "path": app, "latest": normalizeVersion(release["tag_name"] as? String ?? "")])
         return 0
     }
 

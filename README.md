@@ -16,6 +16,9 @@ macOS 13+ 的悬浮小工具侧边栏 + 本地安装 agent：把写作 / AI / �
   - `codesign --verify --deep --strict` 签名校验，不通过不安装；
   - `spctl --assess` 公证 / Gatekeeper 评估，记录 Team ID。
 - **更新与卸载**：启动后自动检查已收录工具的版本，有更新会在行里提示；右键菜单可「更新 / 卸载（移到废纸篓）/ 在 Finder 中显示」。
+- **App 自更新**：启动时检查本仓库 Release，发现新版本会在列表顶部显示「发现新版本」横幅，点击下载、校验、替换并重启。
+- **远程精选源**：从仓库里的 `featured.json` 拉取「精选」工具，按需收录，不用重新发版。
+- **重命名 / 排序**：右键任意工具可重命名、上移、下移，结果保存在本地。
 - **开机自启**：底部勾选写入 `~/Library/LaunchAgents`，以 `--silent` 静默启动（不弹窗，只留菜单栏图标）。
 - **全局快捷键 ⌥⌘T**：随时呼出/隐藏侧边栏。
 - 菜单栏图标、窗口置顶、`Esc` 隐藏、`⌘Q` 退出。
@@ -28,6 +31,15 @@ macOS 13+ 的悬浮小工具侧边栏 + 本地安装 agent：把写作 / AI / �
 - 未做 Apple 公证（ad-hoc 签名）：首次打开如被 Gatekeeper 拦，右键 → 打开，或执行
   `xattr -dr com.apple.quarantine "$HOME/Applications/小工具侧边栏.app"`
 
+## 安装
+
+```bash
+brew tap lovers0/tool-sidebar
+brew install --cask tool-sidebar
+```
+
+或手动下载：Releases 里的 `ToolSidebar.zip`，解压后把 `小工具侧边栏.app` 放进 `~/Applications`。
+
 ## 构建
 
 需要 macOS + Command Line Tools（无需完整 Xcode）：
@@ -35,7 +47,7 @@ macOS 13+ 的悬浮小工具侧边栏 + 本地安装 agent：把写作 / AI / �
 ```bash
 cd tool-sidebar
 ./build.sh
-# 产物：~/Applications/小工具侧边栏.app（universal，v1.1.0）
+# 产物：~/Applications/小工具侧边栏.app（universal，v1.2.0）
 ```
 
 ## 使用
@@ -59,6 +71,8 @@ APP="$HOME/Applications/小工具侧边栏.app/Contents/MacOS/ToolSidebar"
 "$APP" --agent check-updates
 "$APP" --agent remove owner/repo
 "$APP" --agent autostart status|on|off
+"$APP" --agent app-update-check         # 检查 App 自身更新
+"$APP" --agent app-update               # 下载并解压新版本
 ```
 
 ## 目录与数据
@@ -87,6 +101,7 @@ APP="$HOME/Applications/小工具侧边栏.app/Contents/MacOS/ToolSidebar"
 main.swift               # 入口 / CLI 分发
 ToolSidebar.swift        # AppKit 界面与交互
 Agent.swift              # 本地安装 agent（纯 Swift）
+featured.json            # 远程精选源
 build.sh                 # universal 构建 + 打包
 assets/AppIcon.icns      # App 图标
 .github/workflows/       # GitHub Actions

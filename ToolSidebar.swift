@@ -5,7 +5,7 @@ import Carbon
 
 struct Tool {
     let id: String
-    let name: String
+    var name: String
     var subtitle: String
     let icon: String
     let group: String
@@ -33,6 +33,25 @@ struct CatalogFile: Codable {
     var tools: [CatalogTool]
 }
 
+struct FeaturedItem: Codable {
+    let id: String
+    let name: String
+    let subtitle: String
+    let icon: String
+    let group: String?
+    let repo: String?
+    let url: String?
+}
+
+struct FeaturedFile: Codable {
+    let tools: [FeaturedItem]
+}
+
+struct Overrides: Codable {
+    var names: [String: String] = [:]
+    var orders: [String: [String]] = [:]
+}
+
 func expandedPath(_ path: String) -> String {
     (path as NSString).expandingTildeInPath
 }
@@ -43,6 +62,9 @@ func isInstalled(_ tool: Tool) -> Bool {
 }
 
 let catalogPath: String = (("~/Library/Application Support/小工具侧边栏/catalog.json") as NSString).expandingTildeInPath
+let overridesPath: String = (("~/Library/Application Support/小工具侧边栏/overrides.json") as NSString).expandingTildeInPath
+let featuredCachePath: String = (("~/Library/Application Support/小工具侧边栏/featured-cache.json") as NSString).expandingTildeInPath
+let featuredURL = URL(string: "https://raw.githubusercontent.com/LOVERS0/tool-sidebar/main/featured.json")!
 let launchAgentPath: String = (("~/Library/LaunchAgents/com.a1.toolsidebar.plist") as NSString).expandingTildeInPath
 
 func loadCatalogTools() -> [Tool] {
@@ -61,6 +83,30 @@ func loadCatalogTools() -> [Tool] {
             repo: item.repo,
             source: "catalog"
         )
+    }
+}
+
+func loadOverrides() -> Overrides {
+    guard let data = try? Data(contentsOf: URL(fileURLWithPath: overridesPath)),
+          let value = try? JSONDecoder().decode(Overrides.self, from: data) else {
+        return Overrides()
+    }
+    return value
+}
+
+func saveOverrides(_ value: Overrides) {
+    guard let data = try? JSONEncoder().encode(value) else { return }
+    try? data.write(to: URL(fileURLWithPath: overridesPath))
+}
+
+func loadFeaturedCache() -> [Tool] {
+    guard let data = try? Data(contentsOf: URL(fileURLWithPath: featuredCachePath)),
+          let file = try? JSONDecoder().decode(FeaturedFile.self, from: data) else {
+        return []
+    }
+    return file.tools.map { item in
+        Tool(id: item.id, name: item.name, subtitle: item.subtitle, icon: item.icon,
+             group: item.group ?? "精选", path: nil, url: item.url, repo: item.repo, source: "featured")
     }
 }
 
@@ -214,6 +260,9 @@ final class ToolRowView: NSView {
     var onUpdate: (() -> Void)?
     var onUninstall: (() -> Void)?
     var onReveal: (() -> Void)?
+    var onRename: (() -> Void)?
+    var onMoveUp: (() -> Void)?
+    var onMoveDown: (() -> Void)?
     var updateVersion: String?
     private let background = NSView()
     private var tracking: NSTrackingArea?
@@ -332,6 +381,9 @@ final class ToolRowView: NSView {
             if tool.path != nil { add("在 Finder 中显示", #selector(revealAction)) }
             if let version = updateVersion { add("更新到 v\(version)", #selector(updateAction)) }
             if tool.repo != nil || tool.source == "catalog" { add("卸载（移到废纸篓）", #selector(uninstallAction)) }
+            add("重命名…", #selector(renameAction))
+            add("上移", #selector(moveUpAction))
+            add("下移", #selector(moveDownAction))
         } else if tool.repo != nil {
             add("安装", #selector(installAction))
         } else if tool.url != nil {
@@ -345,6 +397,9 @@ final class ToolRowView: NSView {
     @objc private func updateAction() { onUpdate?() }
     @objc private func uninstallAction() { onUninstall?() }
     @objc private func revealAction() { onReveal?() }
+    @objc private func renameAction() { onRename?() }
+    @objc private func moveUpAction() { onMoveUp?() }
+    @objc private func moveDownAction() { onMoveDown?() }
     @objc private func webAction() {
         if let link = tool.url, let url = URL(string: link) { NSWorkspace.shared.open(url) }
     }
@@ -366,6 +421,10 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     private var installCancelled = false
     private var updateVersions: [String: String] = [:]
     private var didCheckUpdates = false
+    private var overrides = Overrides()
+    private var featuredTools: [Tool] = []
+    private var availableAppVersion: String?
+    private var didCheckAppUpdate = false
 
     private var allTools: [Tool] {
         var byRepo: [String: Tool] = [:]
@@ -395,11 +454,24 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             }
         }
         merged.append(contentsOf: catalogTools.filter { !used.contains($0.id) })
-        return merged
+        let existingRepos = Set(merged.compactMap { $0.repo })
+        for item in featuredTools where !existingRepos.contains(item.repo ?? "") {
+            merged.append(item)
+        }
+        return merged.map { item in
+            var tool = item
+            if let custom = overrides.names[item.id], !custom.isEmpty {
+                tool.name = custom
+            }
+            return tool
+        }
     }
 
     private var groups: [String] {
         var result = Toolbox.builtinGroups
+        if !featuredTools.isEmpty {
+            result.append("精选")
+        }
         if allTools.contains(where: { $0.group == "已收录" }) {
             result.append("已收录")
         }
@@ -417,6 +489,8 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
         catalogTools = loadCatalogTools()
+        overrides = loadOverrides()
+        featuredTools = loadFeaturedCache()
         buildHeader()
         buildSearch()
         buildScroll()
@@ -587,6 +661,8 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         super.viewDidAppear()
         scrollToTop()
         checkForUpdates()
+        checkAppUpdate()
+        refreshFeatured()
     }
 
     func scrollToTop() {
@@ -630,6 +706,131 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
                 }
             }
             if !self.updateVersions.isEmpty { self.rebuild() }
+        }
+    }
+
+    private func checkAppUpdate() {
+        guard !didCheckAppUpdate else { return }
+        didCheckAppUpdate = true
+        AgentRunner.run(["app-update-check"]) { [weak self] output in
+            guard let self = self, let data = self.lastJSON(output),
+                  (data["update"] as? Bool) == true,
+                  let latest = data["latest"] as? String else { return }
+            self.availableAppVersion = latest
+            self.rebuild()
+        }
+    }
+
+    private func refreshFeatured() {
+        let request = URLRequest(url: featuredURL)
+        URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
+            guard let self = self, let data = data,
+                  let file = try? JSONDecoder().decode(FeaturedFile.self, from: data) else { return }
+            try? data.write(to: URL(fileURLWithPath: featuredCachePath))
+            let tools = file.tools.map { item in
+                Tool(id: item.id, name: item.name, subtitle: item.subtitle, icon: item.icon,
+                     group: item.group ?? "精选", path: nil, url: item.url, repo: item.repo, source: "featured")
+            }
+            let work = DispatchWorkItem {
+                self.featuredTools = tools
+                self.rebuild()
+            }
+            DispatchQueue.main.async(execute: work)
+        }.resume()
+    }
+
+    private func orderedIds(for group: String) -> [String] {
+        let current = allTools.filter { $0.group == group }.map { $0.id }
+        guard let stored = overrides.orders[group] else { return current }
+        var result = stored.filter { current.contains($0) }
+        result.append(contentsOf: current.filter { !result.contains($0) })
+        return result
+    }
+
+    private func sorted(_ items: [Tool], group: String) -> [Tool] {
+        let order = orderedIds(for: group)
+        return items.sorted {
+            (order.firstIndex(of: $0.id) ?? 9999) < (order.firstIndex(of: $1.id) ?? 9999)
+        }
+    }
+
+    private func rename(_ tool: Tool) {
+        let alert = NSAlert()
+        alert.messageText = "重命名"
+        alert.informativeText = "给「\(tool.name)」起一个你习惯的名字（留空恢复默认）。"
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "取消")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        field.stringValue = tool.name
+        alert.accessoryView = field
+        alert.window.level = .floating
+        if alert.runModal() == .alertFirstButtonReturn {
+            let value = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if value.isEmpty {
+                overrides.names.removeValue(forKey: tool.id)
+            } else {
+                overrides.names[tool.id] = value
+            }
+            saveOverrides(overrides)
+            rebuild()
+        }
+    }
+
+    private func move(_ tool: Tool, up: Bool) {
+        let group = tool.group
+        var ids = orderedIds(for: group)
+        guard let index = ids.firstIndex(of: tool.id) else { return }
+        let target = up ? index - 1 : index + 1
+        guard ids.indices.contains(target) else { return }
+        ids.swapAt(index, target)
+        overrides.orders[group] = ids
+        saveOverrides(overrides)
+        rebuild()
+    }
+
+    @objc private func runAppUpdate() {
+        guard progressPanel == nil else { return }
+        showProgress("正在下载新版本…")
+        currentProcess = AgentRunner.run(["app-update"]) { [weak self] output in
+            guard let self = self else { return }
+            self.currentProcess = nil
+            self.progressPanel?.close()
+            self.progressPanel = nil
+            guard let data = self.lastJSON(output), (data["ok"] as? Bool) == true,
+                  let path = data["path"] as? String else {
+                self.showError("更新失败", detail: output)
+                return
+            }
+            self.applyUpdate(newAppPath: path)
+        }
+    }
+
+    private func applyUpdate(newAppPath: String) {
+        let alert = NSAlert()
+        alert.messageText = "更新已下载"
+        alert.informativeText = "需要重启应用完成更新。"
+        alert.addButton(withTitle: "立即重启")
+        alert.addButton(withTitle: "稍后")
+        if alert.runModal() != .alertFirstButtonReturn { return }
+        let destination = Bundle.main.bundleURL
+        let fm = FileManager.default
+        do {
+            if fm.fileExists(atPath: destination.path) {
+                try fm.trashItem(at: destination, resultingItemURL: nil)
+            }
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+            task.arguments = [newAppPath, destination.path]
+            try task.run()
+            task.waitUntilExit()
+            guard task.terminationStatus == 0 else {
+                self.showError("替换 App 失败", detail: "ditto exit \(task.terminationStatus)")
+                return
+            }
+            NSWorkspace.shared.open(destination)
+            NSApp.terminate(nil)
+        } catch {
+            self.showError("更新失败", detail: error.localizedDescription)
         }
     }
 
@@ -828,13 +1029,24 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         var isFirstGroup = true
 
+        if let version = availableAppVersion {
+            let button = NSButton(title: "⬆ 发现新版本 v\(version) · 点击更新", target: self, action: #selector(runAppUpdate))
+            button.bezelStyle = .rounded
+            button.font = .systemFont(ofSize: 11, weight: .medium)
+            button.contentTintColor = .controlAccentColor
+            stack.addArrangedSubview(button)
+            button.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+            button.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        }
+
         for group in groups {
-            let items = allTools.filter { tool in
+            var items = allTools.filter { tool in
                 guard tool.group == group else { return false }
                 if q.isEmpty { return true }
                 return fuzzyContains(tool.name, q) || fuzzyContains(tool.subtitle, q)
             }
             if items.isEmpty { continue }
+            items = sorted(items, group: group)
 
             if !isFirstGroup {
                 let spacer = NSView()
@@ -863,6 +1075,9 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
                 row.onClick = { [weak self] in self?.handle(tool) }
                 row.onInstall = { [weak self] in self?.startInstall(target: tool.repo ?? tool.name) }
                 row.onUninstall = { [weak self] in self?.uninstall(tool) }
+                row.onRename = { [weak self] in self?.rename(tool) }
+                row.onMoveUp = { [weak self] in self?.move(tool, up: true) }
+                row.onMoveDown = { [weak self] in self?.move(tool, up: false) }
                 row.onReveal = { [weak self] in
                     if let path = tool.path {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: expandedPath(path))])
