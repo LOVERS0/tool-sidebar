@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>小工具侧边栏</title>
+    <link>https://github.com/LOVERS0/tool-sidebar</link>
+    <description>macOS 悬浮小工具侧边栏 + 本地安装 agent</description>
+    <language>zh-CN</language>
+    <item>
+      <title>Version 1.4.0</title>
+      <link>https://github.com/LOVERS0/tool-sidebar/releases/tag/v1.4.0</link>
+      <sparkle:version>1.4.0</sparkle:version>
+      <sparkle:shortVersionString>1.4.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <pubDate>Sun, 02 Nov 2026 12:25:00 +0800</pubDate>
+      <enclosure url="https://github.com/LOVERS0/tool-sidebar/releases/download/v1.4.0/ToolSidebar.zip" length="1443189" type="application/octet-stream" sparkle:edSignature="8OGUJK4ITx22/aWW92AcvSRkHR07aQECrgORkLgAQypqXiptmU8FYHaaF6yEcPaTq8+tu3sLCt3vFNLHZVavCw==" />
+    </item>
+  </channel>
+</rss>
