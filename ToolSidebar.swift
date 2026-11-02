@@ -530,15 +530,6 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
                 merged.append(base)
             }
         }
-        for item in catalogTools where !used.contains(item.id) {
-            var tool = item
-            if let version = item.version, !version.isEmpty {
-                tool.subtitle = "已收录 · v\(version)"
-            } else {
-                tool.subtitle = "已收录"
-            }
-            merged.append(tool)
-        }
         for item in featuredTools {
             if let repo = item.repo, let catalog = byRepo[repo] {
                 var tool = item
@@ -552,6 +543,15 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             } else {
                 merged.append(item)
             }
+        }
+        for item in catalogTools where !used.contains(item.id) {
+            var tool = item
+            if let version = item.version, !version.isEmpty {
+                tool.subtitle = "已收录 · v\(version)"
+            } else {
+                tool.subtitle = "已收录"
+            }
+            merged.append(tool)
         }
         return merged.map { item in
             var tool = item
