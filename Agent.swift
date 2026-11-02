@@ -212,6 +212,12 @@ enum AgentCLI {
 
     static func normalizeVersion(_ value: String) -> String {
         var text = value.trimmingCharacters(in: .whitespaces)
+        for prefix in ["release_", "release-", "Release_", "Release-", "release ", "version_", "version-"] {
+            if text.lowercased().hasPrefix(prefix.lowercased()) {
+                text.removeFirst(prefix.count)
+                break
+            }
+        }
         if text.hasPrefix("v") || text.hasPrefix("V") {
             text.removeFirst()
         }
