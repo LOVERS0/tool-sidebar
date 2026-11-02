@@ -1,5 +1,5 @@
 import Foundation
-#if canImport(Translation)
+#if canImport(Translation) && compiler(>=6.2)
 import Translation
 #endif
 
@@ -156,7 +156,7 @@ enum Translator {
             completion("", false)
             return
         }
-        #if canImport(Translation)
+        #if canImport(Translation) && compiler(>=6.2)
         if #available(macOS 26.0, *) {
             Task {
                 if let result = await systemTranslate(trimmed, toChinese: toChinese) {
@@ -174,7 +174,7 @@ enum Translator {
         completion(dictionaryTranslate(trimmed, toChinese: toChinese), false)
     }
 
-    #if canImport(Translation)
+    #if canImport(Translation) && compiler(>=6.2)
     @available(macOS 26.0, *)
     private static func systemTranslate(_ text: String, toChinese: Bool) async -> String? {
         let source = Locale.Language(identifier: toChinese ? "en" : "zh-Hans")
@@ -190,7 +190,7 @@ enum Translator {
     #endif
 
     static func translateSync(_ text: String, toChinese: Bool) -> (String, Bool) {
-        #if canImport(Translation)
+        #if canImport(Translation) && compiler(>=6.2)
         if #available(macOS 26.0, *) {
             let semaphore = DispatchSemaphore(value: 0)
             var output: String?
