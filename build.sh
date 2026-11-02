@@ -7,6 +7,10 @@ APP="$HOME/Applications/小工具侧边栏.app"
 BUILD="$ROOT/build"
 VERSION="1.5.0"
 SDK="$(xcrun --show-sdk-path)"
+TRANS_LINK=()
+if [ -d "$SDK/System/Library/Frameworks/Translation.framework" ]; then
+  TRANS_LINK=(-Xlinker -weak_framework -Xlinker Translation)
+fi
 
 echo "== Sparkle 框架 =="
 /bin/bash "$ROOT/scripts/fetch-sparkle.sh" "$ROOT/vendor"
@@ -19,7 +23,7 @@ echo "== 编译 arm64 =="
 xcrun swiftc -O -swift-version 5 \
   -target arm64-apple-macosx13.0 \
   "$ROOT/main.swift" "$ROOT/ToolSidebar.swift" "$ROOT/Agent.swift" "$ROOT/Translator.swift" \
-  -framework AppKit -framework Carbon -framework Sparkle -Xlinker -weak_framework -Xlinker Translation \
+  -framework AppKit -framework Carbon -framework Sparkle "${TRANS_LINK[@]}" \
   -F "$SPARKLE" -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
   -sdk "$SDK" \
   -o "$BUILD/ToolSidebar-arm64"
@@ -28,7 +32,7 @@ echo "== 编译 x86_64 =="
 xcrun swiftc -O -swift-version 5 \
   -target x86_64-apple-macosx13.0 \
   "$ROOT/main.swift" "$ROOT/ToolSidebar.swift" "$ROOT/Agent.swift" "$ROOT/Translator.swift" \
-  -framework AppKit -framework Carbon -framework Sparkle -Xlinker -weak_framework -Xlinker Translation \
+  -framework AppKit -framework Carbon -framework Sparkle "${TRANS_LINK[@]}" \
   -F "$SPARKLE" -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
   -sdk "$SDK" \
   -o "$BUILD/ToolSidebar-x86_64"
