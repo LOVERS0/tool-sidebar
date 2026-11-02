@@ -754,6 +754,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         super.viewDidAppear()
         scrollToTop()
         checkForUpdates()
+        checkAppUpdate()
         refreshFeatured()
     }
 
