@@ -16,6 +16,7 @@ struct Tool {
     var repo: String? = nil
     var source: String = "builtin"
     var manual: Bool = false
+    var version: String? = nil
 }
 
 struct CatalogTool: Codable {
@@ -98,7 +99,8 @@ func loadCatalogTools() -> [Tool] {
             group: "已收录",
             path: item.path,
             repo: item.repo,
-            source: "catalog"
+            source: "catalog",
+            version: item.version
         )
     }
 }
@@ -510,13 +512,17 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             if let repo = base.repo, let catalog = byRepo[repo] {
                 var tool = base
                 tool.path = catalog.path ?? base.path
-                tool.subtitle = catalog.subtitle
+                if let version = catalog.version, !version.isEmpty {
+                    tool.subtitle = base.subtitle + " · v\(version)"
+                }
                 tool.source = "catalog"
                 merged.append(tool)
                 used.insert(catalog.id)
             } else if let path = base.path, let catalog = byPath[path] {
                 var tool = base
-                tool.subtitle = catalog.subtitle
+                if let version = catalog.version, !version.isEmpty {
+                    tool.subtitle = base.subtitle + " · v\(version)"
+                }
                 tool.source = "catalog"
                 merged.append(tool)
                 used.insert(catalog.id)
@@ -524,10 +530,28 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
                 merged.append(base)
             }
         }
-        merged.append(contentsOf: catalogTools.filter { !used.contains($0.id) })
-        let existingRepos = Set(merged.compactMap { $0.repo })
-        for item in featuredTools where !existingRepos.contains(item.repo ?? "") {
-            merged.append(item)
+        for item in catalogTools where !used.contains(item.id) {
+            var tool = item
+            if let version = item.version, !version.isEmpty {
+                tool.subtitle = "已收录 · v\(version)"
+            } else {
+                tool.subtitle = "已收录"
+            }
+            merged.append(tool)
+        }
+        for item in featuredTools {
+            if let repo = item.repo, let catalog = byRepo[repo] {
+                var tool = item
+                tool.path = catalog.path ?? item.path
+                if let version = catalog.version, !version.isEmpty {
+                    tool.subtitle = item.subtitle + " · v\(version)"
+                }
+                tool.source = "catalog"
+                merged.append(tool)
+                used.insert(catalog.id)
+            } else {
+                merged.append(item)
+            }
         }
         return merged.map { item in
             var tool = item
