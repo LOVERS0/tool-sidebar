@@ -20,9 +20,11 @@ macOS 13+ 的悬浮小工具侧边栏 + 本地安装 agent：把写作 / AI / �
   - `codesign --verify --deep --strict` 签名校验，不通过不安装；
   - `spctl --assess` 公证 / Gatekeeper 评估，记录 Team ID。
 - **更新与卸载**：启动后自动检查已收录工具的版本，有更新会在行里提示；右键菜单可「更新 / 卸载（移到废纸篓）/ 在 Finder 中显示」。
-- **App 自更新**：启动时检查本仓库 Release，发现新版本会在列表顶部显示「发现新版本」横幅，点击下载、校验、替换并重启。
+- **Sparkle 官方自动更新**：内嵌 Sparkle 2 + 官方 appcast（`appcast.xml`，EdDSA 签名），菜单里「检查更新…」或自动定时检查。
 - **远程精选源**：从仓库里的 `featured.json` 拉取「精选」工具，按需收录，不用重新发版。
-- **重命名 / 排序**：右键任意工具可重命名、上移、下移，结果保存在本地。
+- **重命名 / 排序 / 分类**：右键任意工具可重命名、上移、下移、移动到默认或自定义分类；分类可新建。
+- **批量安装**：`⋯` 菜单里可一键安装所有未安装工具，带进度和失败汇总。
+- **换机迁移**：导出/导入配置（已装工具列表 + 重命名/分类/排序 + 开机自启），导入后自动批量安装。
 - **开机自启**：底部勾选写入 `~/Library/LaunchAgents`，以 `--silent` 静默启动（不弹窗，只留菜单栏图标）。
 - **收起成悬浮球**：关掉侧边栏后变成一个小球，可拖动；点球展开。静默开机启动时也只显示球。
 - **全局快捷键 ⌥⌘T**：随时呼出/隐藏侧边栏。
@@ -53,7 +55,7 @@ brew install --cask tool-sidebar
 ```bash
 cd tool-sidebar
 ./build.sh
-# 产物：~/Applications/小工具侧边栏.app（universal，v1.3.0）
+# 产物：~/Applications/小工具侧边栏.app（universal，v1.4.0）
 ```
 
 ## 使用
@@ -108,6 +110,8 @@ main.swift               # 入口 / CLI 分发
 ToolSidebar.swift        # AppKit 界面与交互
 Agent.swift              # 本地安装 agent（纯 Swift）
 featured.json            # 远程精选源
+appcast.xml              # Sparkle 官方更新源（EdDSA 签名）
+scripts/fetch-sparkle.sh # 下载 Sparkle 框架
 build.sh                 # universal 构建 + 打包
 assets/AppIcon.icns      # App 图标
 .github/workflows/       # GitHub Actions
