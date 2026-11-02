@@ -80,14 +80,32 @@ enum AgentCLI {
 
     // MARK: 网络
 
+    private static var cachedToken: String?? = nil
+
     static func token() -> String? {
+        if let cached = cachedToken { return cached }
+        var found: String?
         let tokenFile = home + "/.config/tool-sidebar/github_token"
         if let text = try? String(contentsOfFile: tokenFile, encoding: .utf8) {
             let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !value.isEmpty { return value }
+            if !value.isEmpty { found = value }
         }
-        let env = ProcessInfo.processInfo.environment["GITHUB_TOKEN"] ?? ""
-        return env.isEmpty ? nil : env
+        if found == nil {
+            let env = ProcessInfo.processInfo.environment["GITHUB_TOKEN"] ?? ""
+            if !env.isEmpty { found = env }
+        }
+        if found == nil {
+            let candidates = ["/opt/homebrew/bin/gh", "/usr/local/bin/gh", home + "/.local/bin/gh"]
+            for gh in candidates where FileManager.default.isExecutableFile(atPath: gh) {
+                let result = process(gh, ["auth", "token"])
+                if result.code == 0 {
+                    let value = result.out.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !value.isEmpty { found = value; break }
+                }
+            }
+        }
+        cachedToken = .some(found)
+        return found
     }
 
     static func http(_ url: URL, method: String = "GET", body: Data? = nil) -> (Data?, Int) {
@@ -116,9 +134,12 @@ enum AgentCLI {
         return (data, status)
     }
 
+    static var lastAPIStatus: Int = 0
+
     static func api(_ path: String) -> [String: Any]? {
         guard let url = URL(string: "https://api.github.com" + path) else { return nil }
         let (data, status) = http(url)
+        lastAPIStatus = status
         guard status >= 200, status < 300, let data = data,
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
@@ -449,6 +470,9 @@ enum AgentCLI {
         } else {
             let candidates = searchRepos(target)
             guard !candidates.isEmpty else {
+                if lastAPIStatus == 403 {
+                    throw AgentError.message("GitHub API 限额已用完（未登录 60 次/小时）。稍后再试或登录 gh。")
+                }
                 throw AgentError.message("没有搜到「\(target)」对应的 GitHub 仓库")
             }
             var picked: String?
@@ -471,7 +495,10 @@ enum AgentCLI {
             release = api("/repos/\(full)/releases/latest")
         }
         guard let releaseObject = release else {
-            throw AgentError.message("仓库没有 Release")
+            if lastAPIStatus == 403 {
+                throw AgentError.message("GitHub API 限额已用完（未登录 60 次/小时）。已登录 gh 的话重启 App 会自动使用；否则稍后再试。")
+            }
+            throw AgentError.message("仓库没有 Release（HTTP \(lastAPIStatus)）")
         }
         let releaseURL = releaseObject["html_url"] as? String ?? "https://github.com/\(full)/releases"
         guard let assets = releaseObject["assets"] as? [[String: Any]], let asset = pickAsset(assets) else {
