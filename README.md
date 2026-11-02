@@ -7,8 +7,8 @@
 ## 功能
 
 - **一列管所有工具**：内置 26 个（写作 / AI 开发 / 系统小工具），分组、搜索、绿点=已装，点一下启动。
-- **点未安装的工具 = 让本地 agent 去装**：自动查该仓库最新 Release → 选 macOS 包 → 下载 → 自检 → 安装到 `~/Applications` → 写入目录并显示在「已收录」分组。
-- **顶栏 `+` 任意收录**：输入 `owner/repo`、完整 GitHub 链接，或一个搜索词（agent 会搜最高星的匹配仓库）→ 同样走下载 + 自检 + 收录。
+- **点未安装的工具 = 让本地 agent 去装**：自动查该仓库最新 Release → 选 macOS 包 → 下载 → 自检 → 安装到 `~/Applications` → 写入目录并显示在「已收录」分组。**全程在 App 内完成，不弹浏览器窗口**；失败时只弹结果说明，可点「复制链接」拿发布页。
+- **顶栏 `+` 任意收录**：输入 `owner/repo`、完整 GitHub 链接，或一个搜索词（agent 会搜索并逐个探测可用 macOS 包）→ 同样走下载 + 自检 + 收录。中文关键词内置映射（窗口管理 / 剪贴板 / 菜单栏 / 压缩 / 查重 / 系统监控 / 传输 / 日历 等）。
 - **自检内容**：
   - SHA-256 计算并记录；如果仓库提供官方 checksum 文件则自动比对；
   - `codesign --verify --deep --strict` 代码签名校验，不通过则不安装；
@@ -62,11 +62,11 @@ APP="$HOME/Applications/小工具侧边栏.app/Contents/MacOS/ToolSidebar"
 - 下载文件的 SHA-256 会写入目录 JSON，便于事后核对。
 - 不自带提权，不静默改系统设置；开机自启使用用户级 LaunchAgent。
 - 直连 GitHub 失败时自动改用 `ghproxy.net` 镜像下载（仅下载，不涉及账号 Token）。
-- 目前支持 `.dmg` / `.zip` / `.tar.gz` 里的 `.app`，不支持 `.pkg` 安装器和纯 CLI 工具（会给出发布页让你手动处理）。
+- 目前只自动安装 `.dmg` / `.zip` 里的 `.app`；`.pkg`、源码包和纯 CLI 工具不支持，会给出发布页链接（可复制，不会自动开浏览器）。
 
 ## 已知限制
 
-- GitHub API 未带 Token 时 60 次/小时，搜索和查 Release 会受限。
+- GitHub API 未带 Token 时 60 次/小时，搜索和查 Release 会受限；可在 `~/.config/tool-sidebar/github_token` 放一个 Token（只用于读 API / 发布，不会外传）。
 - 只挑 Apple Silicon / Universal 优先的 macOS 资源；Intel 机器可能拿到不合适的包。
 - 部分仓库 Release 里没有现成 macOS App（如 Typst、novelWriter），会提示失败并给出发布页。
 

@@ -543,7 +543,17 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             startInstall(target: repo)
             return
         }
-        launchTool(tool)
+        if let link = tool.url {
+            if link.contains("github.com") {
+                startInstall(target: link)
+            } else if let url = URL(string: link) {
+                // 纯网页工具（不是下载），仍然用浏览器打开
+                NSWorkspace.shared.open(url)
+            }
+            return
+        }
+        // 没有仓库信息：让本地 agent 按名字搜索后直接装
+        startInstall(target: tool.name)
     }
 
     @objc private func addRepo() {
@@ -631,9 +641,9 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             alert.addButton(withTitle: "好")
         } else {
             alert.messageText = "❌ \(result.error ?? result.message ?? "安装失败")"
-            alert.informativeText = result.releaseURL.map { "可以打开发布页手动下载：\n\($0)" } ?? ""
+            alert.informativeText = result.releaseURL.map { "agent 没找到可直接安装的 macOS 包。\n发布页（可点「复制链接」）：\n\($0)" } ?? ""
             alert.addButton(withTitle: "好")
-            if result.releaseURL != nil { alert.addButton(withTitle: "打开发布页") }
+            if result.releaseURL != nil { alert.addButton(withTitle: "复制链接") }
         }
         present(alert, result: result)
     }
@@ -649,10 +659,9 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     private func present(_ alert: NSAlert, result: AgentResult?) {
         if let window = view.window {
             alert.beginSheetModal(for: window) { response in
-                if response == .alertSecondButtonReturn,
-                   let link = result?.releaseURL,
-                   let url = URL(string: link) {
-                    NSWorkspace.shared.open(url)
+                if response == .alertSecondButtonReturn, let link = result?.releaseURL {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(link, forType: .string)
                 }
             }
         } else {

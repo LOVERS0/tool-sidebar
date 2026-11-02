@@ -58,8 +58,27 @@ def http_get(url, dest=None):
         return resp.read()
 
 
+def github_token():
+    token_file = os.path.expanduser("~/.config/tool-sidebar/github_token")
+    if os.path.exists(token_file):
+        try:
+            with open(token_file, "r", encoding="utf-8") as f:
+                token = f.read().strip()
+            if token:
+                return token
+        except Exception:  # noqa: BLE001
+            pass
+    return os.environ.get("GITHUB_TOKEN", "").strip()
+
+
 def gh_api(path):
-    return json.loads(http_get("https://api.github.com" + path))
+    headers = dict(UA)
+    token = github_token()
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    req = urllib.request.Request("https://api.github.com" + path, headers=headers)
+    with urllib.request.urlopen(req, timeout=90) as resp:
+        return json.loads(resp.read())
 
 
 def download(url, dest):
@@ -83,18 +102,90 @@ def parse_repo(arg):
     return None
 
 
+
+DIRECT_MAP = {
+    "窗口管理": "rxhanson/Rectangle",
+    "窗口吸附": "rxhanson/Rectangle",
+    "剪贴板": "p0deje/Maccy",
+    "菜单栏": "jordanbaird/Ice",
+    "菜单栏管理": "jordanbaird/Ice",
+    "压缩": "aonez/Keka",
+    "解压": "aonez/Keka",
+    "查重": "qarmin/czkawka",
+    "系统监控": "exelban/stats",
+    "传输": "localsend/localsend",
+    "跨设备传文件": "localsend/localsend",
+    "日历": "sfsam/Itsycal",
+    "窗口切换": "lwouis/alt-tab-macos",
+}
+
+CJK_MAP = {
+    "窗口管理": "window manager",
+    "窗口": "window",
+    "剪贴板": "clipboard",
+    "菜单栏": "menu bar",
+    "压缩": "archiver",
+    "解压": "archiver",
+    "查重": "duplicate finder",
+    "系统监控": "system monitor",
+    "传输": "file transfer",
+    "笔记": "notes",
+    "写作": "writing",
+    "排版": "typesetting",
+    "日历": "calendar",
+    "下载": "downloader",
+    "截图": "screenshot",
+}
+
+
+def normalize_query(query):
+    text = query
+    for cn, en in CJK_MAP.items():
+        text = text.replace(cn, " " + en + " ")
+    return " ".join(text.split())
+
+def search_repos(query, limit=10):
+    normalized = normalize_query(query)
+    q = urllib.parse.quote(normalized + " macos")
+    data = gh_api("/search/repositories?q=%s&sort=stars&order=desc&per_page=20" % q)
+    items = [item for item in (data.get("items") or []) if not item.get("archived")]
+    if not items:
+        q2 = urllib.parse.quote(normalized)
+        data = gh_api("/search/repositories?q=%s&sort=stars&order=desc&per_page=20" % q2)
+        items = [item for item in (data.get("items") or []) if not item.get("archived")]
+    if not items:
+        return None
+    ql = query.strip().lower()
+
+    def score(item):
+        name = (item.get("name") or "").lower()
+        desc = (item.get("description") or "").lower()
+        text = name + " " + desc
+        value = 0.0
+        if name == ql:
+            value += 100
+        elif ql in name:
+            value += 50
+        if "macos" in text or "mac os" in text or "os x" in text:
+            value += 30
+        if "mac" in text and "macos" not in text:
+            value += 8
+        if "linux" in text and "macos" not in text:
+            value -= 10
+        value += min(item.get("stargazers_count", 0) / 10000.0, 10)
+        return value
+
+    items.sort(key=score, reverse=True)
+    return items[:limit]
+
+
 def search_repo(query):
-    q = urllib.parse.quote(query)
-    data = gh_api("/search/repositories?q=%s&sort=stars&order=desc&per_page=5" % q)
-    items = data.get("items") or []
-    for item in items:
-        if not item.get("archived"):
-            return item
-    return None
+    items = search_repos(query)
+    return items[0] if items else None
 
 
 def is_mac_asset(name):
-    if not re.search(r"\.(dmg|zip|tar\.gz|tgz)$", name, re.I):
+    if not re.search(r"\.(dmg|zip)$", name, re.I):
         return False
     if re.search(r"\.(sig|sha256|sha512|asc|md5|txt|json|yml|yaml)$", name, re.I):
         return False
@@ -113,7 +204,9 @@ def pick_asset(assets):
         name = asset["name"]
         score = 0
         if name.lower().endswith(".dmg"):
-            score += 5
+            score += 8
+        elif name.lower().endswith(".zip"):
+            score += 4
         if re.search(r"(arm64|aarch64|universal|silicon)", name, re.I):
             score += 3
         if re.search(r"(mac|macos|darwin|osx)", name, re.I):
@@ -125,7 +218,7 @@ def pick_asset(assets):
         # 兜底：没有平台标识的 zip 也接受（很多 Mac App 这样命名）
         for asset in assets:
             name = asset["name"]
-            if not re.search(r"\.(zip|dmg|tar\.gz|tgz)$", name, re.I):
+            if not re.search(r"\.(zip|dmg)$", name, re.I):
                 continue
             if re.search(r"(windows|win64|win32|linux|\.deb|\.rpm|appimage)", name, re.I):
                 continue
@@ -275,25 +368,49 @@ def cmd_search(query):
 
 
 def cmd_install(target, check_only=False, group="已收录"):
-    parsed = parse_repo(target)
-    chosen = None
+    try:
+        _cmd_install(target, check_only, group)
+    except Exception as exc:  # noqa: BLE001
+        emit({"ok": False, "target": target, "error": "安装失败：%s" % exc})
+
+
+def _cmd_install(target, check_only=False, group="已收录"):
+    direct = DIRECT_MAP.get(target.strip())
+    parsed = parse_repo(direct if direct else target)
+    release = None
     if parsed:
         owner, repo = parsed
         full = "%s/%s" % (owner, repo)
     else:
-        item = search_repo(target)
-        if not item:
+        candidates = search_repos(target)
+        if not candidates:
             emit({"ok": False, "error": "没有搜到「%s」对应的 GitHub 仓库" % target})
             return
-        full = item["full_name"]
-        chosen = item
+        full = None
+        for item in candidates[:6]:
+            name = item["full_name"]
+            try:
+                candidate_release = gh_api("/repos/%s/releases/latest" % name)
+            except Exception:  # noqa: BLE001
+                continue
+            if pick_asset(candidate_release.get("assets") or []):
+                full = name
+                release = candidate_release
+                break
+        if not full:
+            emit({
+                "ok": False,
+                "error": "搜到了仓库，但没有可自动安装的 macOS 包（只支持 dmg / zip）",
+                "candidates": [c["full_name"] for c in candidates[:6]],
+            })
+            return
 
     log("仓库：%s" % full)
-    repo_info = gh_api("/repos/" + full)
-    try:
-        release = gh_api("/repos/%s/releases/latest" % full)
-    except Exception:  # noqa: BLE001
-        release = None
+    if release is None:
+        try:
+            release = gh_api("/repos/%s/releases/latest" % full)
+        except Exception:  # noqa: BLE001
+            release = None
 
     assets = (release or {}).get("assets") or []
     asset = pick_asset(assets)
