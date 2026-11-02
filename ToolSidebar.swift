@@ -1008,11 +1008,16 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         add("批量安装未安装工具…", #selector(batchInstall))
         add("检查更新（Sparkle）…", #selector(checkSparkleUpdates))
         add("中英翻译…", #selector(showTranslatorWindow))
+        add("翻译屏幕（OCR）…", #selector(translateScreenAction))
         add("打开辅助功能设置…", #selector(openAccessibilitySettings))
         menu.addItem(NSMenuItem.separator())
         add("导出配置…", #selector(exportConfig))
         add("导入配置…", #selector(importConfig))
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
+    }
+
+    @objc private func translateScreenAction() {
+        (NSApp.delegate as? AppDelegate)?.translateScreen()
     }
 
     @objc private func showTranslatorWindow() {
@@ -1460,11 +1465,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var updaterController: SPUStandardUpdaterController!
     var translatorWindow: TranslatorWindowController?
     private var hotKeyRef: EventHotKeyRef?
+    private var screenHotKeyRef: EventHotKeyRef?
     private var hotKeyHandler: EventHandlerRef?
     private let silentMode = CommandLine.arguments.contains("--silent")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(silentMode ? .accessory : .regular)
+        if CommandLine.arguments.contains("--screen-translate") {
+            let screenWork = DispatchWorkItem { [weak self] in self?.translateScreen() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: screenWork)
+        }
         if CommandLine.arguments.contains("--translator") {
             let showWork = DispatchWorkItem { [weak self] in self?.showTranslator() }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: showWork)
@@ -1556,16 +1566,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let hotKeyID = EventHotKeyID(signature: OSType(0x54534252), id: 1)
         RegisterEventHotKey(UInt32(kVK_ANSI_T), UInt32(cmdKey | optionKey), hotKeyID,
                             GetApplicationEventTarget(), 0, &hotKeyRef)
+        let screenHotKeyID = EventHotKeyID(signature: OSType(0x54534252), id: 2)
+        RegisterEventHotKey(UInt32(kVK_ANSI_Y), UInt32(cmdKey | optionKey), screenHotKeyID,
+                            GetApplicationEventTarget(), 0, &screenHotKeyRef)
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
                                       eventKind: UInt32(kEventHotKeyPressed))
         let pointer = Unmanaged.passUnretained(self).toOpaque()
-        InstallEventHandler(GetApplicationEventTarget(), { _, _, userData -> OSStatus in
+        InstallEventHandler(GetApplicationEventTarget(), { _, event, userData -> OSStatus in
             guard let userData = userData else { return noErr }
             let delegate = Unmanaged<AppDelegate>.fromOpaque(userData).takeUnretainedValue()
-            let work = DispatchWorkItem { delegate.toggleWindow() }
+            var pressedID = EventHotKeyID()
+            if let event = event {
+                GetEventParameter(event, EventParamName(kEventParamDirectObject),
+                                  EventParamType(typeEventHotKeyID), nil,
+                                  MemoryLayout<EventHotKeyID>.size, nil, &pressedID)
+            }
+            let work = DispatchWorkItem {
+                if pressedID.id == 2 {
+                    delegate.translateScreen()
+                } else {
+                    delegate.toggleWindow()
+                }
+            }
             DispatchQueue.main.async(execute: work)
             return noErr
         }, 1, &eventType, pointer, &hotKeyHandler)
+    }
+
+    func translateScreen() {
+        ScreenTranslator.show()
     }
 
     func buildWindow() {
