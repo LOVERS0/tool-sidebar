@@ -1,5 +1,6 @@
 import AppKit
 import Carbon
+import Sparkle
 
 // MARK: - 数据模型
 
@@ -8,7 +9,7 @@ struct Tool {
     var name: String
     var subtitle: String
     let icon: String
-    let group: String
+    var group: String
     var path: String? = nil
     var url: String? = nil
     var command: String? = nil
@@ -51,6 +52,21 @@ struct FeaturedFile: Codable {
 struct Overrides: Codable {
     var names: [String: String] = [:]
     var orders: [String: [String]] = [:]
+    var categories: [String: String] = [:]
+    var customCategories: [String] = []
+}
+
+struct MigrationTool: Codable {
+    let repo: String
+    let name: String
+    let group: String?
+}
+
+struct MigrationFile: Codable {
+    let version: Int
+    let tools: [MigrationTool]
+    let overrides: Overrides?
+    let autostart: Bool?
 }
 
 func expandedPath(_ path: String) -> String {
@@ -284,6 +300,9 @@ final class ToolRowView: NSView {
     var onRename: (() -> Void)?
     var onMoveUp: (() -> Void)?
     var onMoveDown: (() -> Void)?
+    var onAssignCategory: ((String?) -> Void)?
+    var onNewCategory: (() -> Void)?
+    var categories: [String] = []
     var updateVersion: String?
     private let background = NSView()
     private var tracking: NSTrackingArea?
@@ -405,6 +424,24 @@ final class ToolRowView: NSView {
             add("重命名…", #selector(renameAction))
             add("上移", #selector(moveUpAction))
             add("下移", #selector(moveDownAction))
+
+            let categoryMenu = NSMenu()
+            for name in categories {
+                let item = NSMenuItem(title: name, action: #selector(assignCategoryAction(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = name
+                categoryMenu.addItem(item)
+            }
+            categoryMenu.addItem(NSMenuItem.separator())
+            let newItem = NSMenuItem(title: "新建分类…", action: #selector(newCategoryAction), keyEquivalent: "")
+            newItem.target = self
+            categoryMenu.addItem(newItem)
+            let resetItem = NSMenuItem(title: "移回默认分类", action: #selector(resetCategoryAction), keyEquivalent: "")
+            resetItem.target = self
+            categoryMenu.addItem(resetItem)
+            let categoryItem = NSMenuItem(title: "分类", action: nil, keyEquivalent: "")
+            categoryItem.submenu = categoryMenu
+            menu.addItem(categoryItem)
         } else if tool.repo != nil {
             add("安装", #selector(installAction))
         } else if tool.url != nil {
@@ -421,6 +458,9 @@ final class ToolRowView: NSView {
     @objc private func renameAction() { onRename?() }
     @objc private func moveUpAction() { onMoveUp?() }
     @objc private func moveDownAction() { onMoveDown?() }
+    @objc private func assignCategoryAction(_ sender: NSMenuItem) { onAssignCategory?(sender.representedObject as? String) }
+    @objc private func newCategoryAction() { onNewCategory?() }
+    @objc private func resetCategoryAction() { onAssignCategory?(nil) }
     @objc private func webAction() {
         if let link = tool.url, let url = URL(string: link) { NSWorkspace.shared.open(url) }
     }
@@ -446,6 +486,11 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     private var featuredTools: [Tool] = []
     private var availableAppVersion: String?
     private var didCheckAppUpdate = false
+    private var batchQueue: [Tool] = []
+    private var batchIndex = 0
+    private var batchSucceeded = 0
+    private var batchFailed: [String] = []
+    private var batchCancelled = false
 
     private var allTools: [Tool] {
         var byRepo: [String: Tool] = [:]
@@ -484,12 +529,18 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             if let custom = overrides.names[item.id], !custom.isEmpty {
                 tool.name = custom
             }
+            if let category = overrides.categories[item.id], !category.isEmpty {
+                tool.group = category
+            }
             return tool
         }
     }
 
     private var groups: [String] {
         var result = Toolbox.builtinGroups
+        for category in overrides.customCategories where !result.contains(category) {
+            result.append(category)
+        }
         if !featuredTools.isEmpty {
             result.append("精选")
         }
@@ -532,6 +583,13 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         plusButton.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(plusButton)
 
+        let menuButton = NSButton(title: "⋯", target: self, action: #selector(showMoreMenu(_:)))
+        menuButton.isBordered = false
+        menuButton.font = .systemFont(ofSize: 15, weight: .medium)
+        menuButton.contentTintColor = .secondaryLabelColor
+        menuButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(menuButton)
+
         let closeButton = NSButton(title: "×", target: self, action: #selector(hideWindow))
         closeButton.isBordered = false
         closeButton.font = .systemFont(ofSize: 16, weight: .medium)
@@ -558,8 +616,13 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             plusButton.widthAnchor.constraint(equalToConstant: 22),
             plusButton.heightAnchor.constraint(equalToConstant: 22),
 
+            menuButton.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
+            menuButton.trailingAnchor.constraint(equalTo: plusButton.leadingAnchor, constant: -2),
+            menuButton.widthAnchor.constraint(equalToConstant: 22),
+            menuButton.heightAnchor.constraint(equalToConstant: 22),
+
             countLabel.firstBaselineAnchor.constraint(equalTo: title.firstBaselineAnchor),
-            countLabel.trailingAnchor.constraint(equalTo: plusButton.leadingAnchor, constant: -6)
+            countLabel.trailingAnchor.constraint(equalTo: menuButton.leadingAnchor, constant: -6)
         ])
     }
 
@@ -686,7 +749,6 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         super.viewDidAppear()
         scrollToTop()
         checkForUpdates()
-        checkAppUpdate()
         refreshFeatured()
     }
 
@@ -930,6 +992,184 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         }
     }
 
+    @objc private func showMoreMenu(_ sender: NSButton) {
+        let menu = NSMenu()
+        func add(_ title: String, _ action: Selector) {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
+        add("批量安装未安装工具…", #selector(batchInstall))
+        add("检查更新（Sparkle）…", #selector(checkSparkleUpdates))
+        menu.addItem(NSMenuItem.separator())
+        add("导出配置…", #selector(exportConfig))
+        add("导入配置…", #selector(importConfig))
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
+    }
+
+    @objc private func checkSparkleUpdates() {
+        (NSApp.delegate as? AppDelegate)?.checkForUpdatesSparkle()
+    }
+
+    @objc private func batchInstall() {
+        let targets = allTools.filter { !isInstalled($0) && $0.repo != nil }
+        guard !targets.isEmpty else {
+            showError("没有待安装的工具", detail: "所有带 GitHub 仓库的工具都已经安装。")
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "批量安装 \(targets.count) 个工具？"
+        alert.informativeText = "会按顺序下载、自检、安装，耗时取决于网速，过程中可以取消。"
+        alert.addButton(withTitle: "开始")
+        alert.addButton(withTitle: "取消")
+        if alert.runModal() == .alertFirstButtonReturn {
+            startBatch(targets)
+        }
+    }
+
+    private func startBatch(_ tools: [Tool]) {
+        guard !tools.isEmpty else { return }
+        batchQueue = tools
+        batchIndex = 0
+        batchSucceeded = 0
+        batchFailed = []
+        batchCancelled = false
+        runNextBatch()
+    }
+
+    private func runNextBatch() {
+        guard !batchCancelled else { finishBatch(); return }
+        guard batchIndex < batchQueue.count else { finishBatch(); return }
+        let tool = batchQueue[batchIndex]
+        showProgress("批量安装 \(batchIndex + 1)/\(batchQueue.count)：\(tool.name)…")
+        currentProcess = AgentRunner.run(["install", tool.repo ?? tool.name]) { [weak self] output in
+            guard let self = self else { return }
+            self.currentProcess = nil
+            self.progressPanel?.close()
+            self.progressPanel = nil
+            if let data = self.lastJSON(output), (data["ok"] as? Bool) == true {
+                self.batchSucceeded += 1
+            } else {
+                self.batchFailed.append(tool.name)
+            }
+            self.batchIndex += 1
+            self.runNextBatch()
+        }
+    }
+
+    private func finishBatch() {
+        let total = batchQueue.count
+        let failed = batchFailed
+        batchQueue = []
+        batchIndex = 0
+        catalogTools = loadCatalogTools()
+        rebuild()
+        let alert = NSAlert()
+        alert.messageText = "批量安装完成"
+        var lines = ["成功 \(batchSucceeded) 个 / 共 \(total) 个"]
+        if !failed.isEmpty {
+            lines.append("失败：\(failed.joined(separator: "、"))")
+        }
+        alert.informativeText = lines.joined(separator: "\n")
+        alert.addButton(withTitle: "好")
+        present(alert, result: nil)
+    }
+
+    @objc private func exportConfig() {
+        let panel = NSSavePanel()
+        panel.title = "导出配置"
+        panel.nameFieldStringValue = "tool-sidebar-migration.json"
+        panel.allowedFileTypes = ["json"]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        var seen = Set<String>()
+        var tools: [MigrationTool] = []
+        for tool in allTools where isInstalled(tool) {
+            guard let repo = tool.repo, !seen.contains(repo) else { continue }
+            seen.insert(repo)
+            tools.append(MigrationTool(repo: repo, name: tool.name, group: tool.group))
+        }
+        let file = MigrationFile(version: 1, tools: tools, overrides: overrides, autostart: autostartEnabled())
+        do {
+            let data = try JSONEncoder().encode(file)
+            try data.write(to: url)
+            showError("已导出", detail: "\(tools.count) 个工具 + 重命名/分类/自启设置\n\(url.path)")
+        } catch {
+            showError("导出失败", detail: error.localizedDescription)
+        }
+    }
+
+    @objc private func importConfig() {
+        let panel = NSOpenPanel()
+        panel.title = "导入配置"
+        panel.allowedFileTypes = ["json"]
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let data = try? Data(contentsOf: url),
+              let file = try? JSONDecoder().decode(MigrationFile.self, from: data) else {
+            showError("导入失败", detail: "文件格式不对")
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "导入 \(file.tools.count) 个工具？"
+        alert.informativeText = "会恢复重命名/分类/自启设置，并依次安装缺少的工具。"
+        alert.addButton(withTitle: "导入")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        if let imported = file.overrides {
+            overrides = imported
+            saveOverrides(overrides)
+        }
+        if let autostart = file.autostart {
+            AgentRunner.run(["autostart", autostart ? "on" : "off", Bundle.main.bundlePath]) { _ in }
+        }
+        rebuild()
+        let tools = file.tools.map { item in
+            Tool(id: "repo:\(item.repo)", name: item.name, subtitle: "迁移导入", icon: "shippingbox",
+                 group: item.group ?? "已收录", repo: item.repo, source: "catalog")
+        }
+        startBatch(tools)
+    }
+
+    private func currentCategoryNames() -> [String] {
+        var list = Toolbox.builtinGroups
+        for category in overrides.customCategories where !list.contains(category) {
+            list.append(category)
+        }
+        return list
+    }
+
+    private func assignCategory(_ tool: Tool, to category: String?) {
+        if let category = category, !category.isEmpty {
+            if !currentCategoryNames().contains(category) {
+                overrides.customCategories.append(category)
+            }
+            overrides.categories[tool.id] = category
+        } else {
+            overrides.categories.removeValue(forKey: tool.id)
+        }
+        saveOverrides(overrides)
+        rebuild()
+    }
+
+    private func newCategory(for tool: Tool) {
+        let alert = NSAlert()
+        alert.messageText = "新建分类"
+        alert.informativeText = "给「\(tool.name)」新建一个分类。"
+        alert.addButton(withTitle: "创建")
+        alert.addButton(withTitle: "取消")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.placeholderString = "分类名称"
+        alert.accessoryView = field
+        alert.window.level = .floating
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        if !currentCategoryNames().contains(name) {
+            overrides.customCategories.append(name)
+        }
+        assignCategory(tool, to: name)
+    }
+
     @objc private func toggleAutostart(_ sender: NSButton) {
         let enabled = sender.state == .on
         AgentRunner.run(["autostart", enabled ? "on" : "off", Bundle.main.bundlePath]) { _ in }
@@ -963,6 +1203,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
 
     @objc private func cancelInstall() {
         installCancelled = true
+        batchCancelled = true
         currentProcess?.terminate()
         currentProcess = nil
         progressPanel?.close()
@@ -1112,6 +1353,9 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
                 row.onRename = { [weak self] in self?.rename(tool) }
                 row.onMoveUp = { [weak self] in self?.move(tool, up: true) }
                 row.onMoveDown = { [weak self] in self?.move(tool, up: false) }
+                row.categories = self.currentCategoryNames()
+                row.onAssignCategory = { [weak self] category in self?.assignCategory(tool, to: category) }
+                row.onNewCategory = { [weak self] in self?.newCategory(for: tool) }
                 row.onReveal = { [weak self] in
                     if let path = tool.path {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: expandedPath(path))])
@@ -1193,12 +1437,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var window: NSWindow!
     var statusItem: NSStatusItem?
     var ballWindow: NSPanel?
+    var updaterController: SPUStandardUpdaterController!
     private var hotKeyRef: EventHotKeyRef?
     private var hotKeyHandler: EventHandlerRef?
     private let silentMode = CommandLine.arguments.contains("--silent")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(silentMode ? .accessory : .regular)
+        updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        if CommandLine.arguments.contains("--sparkle-check") {
+            let work = DispatchWorkItem { [weak self] in self?.updaterController.checkForUpdates(nil) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+        }
         buildMainMenu()
         if !silentMode {
             buildWindow()
@@ -1337,6 +1587,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         statusItem = item
     }
 
+    @objc func checkForUpdatesSparkle() {
+        updaterController.checkForUpdates(nil)
+    }
+
     @objc func toggleWindow() {
         if let window = window, window.isVisible {
             hideSidebar()
@@ -1416,6 +1670,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         mainMenu.addItem(appMenuItem)
 
         let appMenu = NSMenu()
+        let updateItem = NSMenuItem(title: "检查更新…", action: #selector(checkForUpdatesSparkle), keyEquivalent: "")
+        updateItem.target = self
+        appMenu.addItem(updateItem)
         appMenu.addItem(withTitle: "隐藏窗口", action: #selector(toggleWindow), keyEquivalent: "h")
         appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(withTitle: "退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
