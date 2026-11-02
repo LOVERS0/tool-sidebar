@@ -1,5 +1,7 @@
 # 小工具侧边栏（ToolSidebar）
 
+> GitHub 仓库：https://github.com/LOVERS0/tool-sidebar
+
 一个 macOS 悬浮侧边栏 + 本地安装 agent：把写作 / AI / 系统小工具收进一列，点一下启动；从 GitHub 下载开源工具时自动做自检（SHA-256、签名、公证），通过后安装并收录；支持开机自启。
 
 ![侧边栏截图](screenshot.png)
