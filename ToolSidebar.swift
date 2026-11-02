@@ -203,9 +203,14 @@ func launchTool(_ tool: Tool) {
         if FileManager.default.fileExists(atPath: path) {
             NSWorkspace.shared.openApplication(
                 at: URL(fileURLWithPath: path),
-                configuration: NSWorkspace.OpenConfiguration(),
-                completionHandler: nil
-            )
+                configuration: NSWorkspace.OpenConfiguration()
+            ) { _, error in
+                guard let error = error else { return }
+                let work = DispatchWorkItem {
+                    (NSApp.delegate as? AppDelegate)?.showLaunchError(appName: tool.name, detail: error.localizedDescription)
+                }
+                DispatchQueue.main.async(execute: work)
+            }
             return
         }
     }
@@ -1001,10 +1006,20 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         }
         add("批量安装未安装工具…", #selector(batchInstall))
         add("检查更新（Sparkle）…", #selector(checkSparkleUpdates))
+        add("中英翻译…", #selector(showTranslatorWindow))
+        add("打开辅助功能设置…", #selector(openAccessibilitySettings))
         menu.addItem(NSMenuItem.separator())
         add("导出配置…", #selector(exportConfig))
         add("导入配置…", #selector(importConfig))
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
+    }
+
+    @objc private func showTranslatorWindow() {
+        (NSApp.delegate as? AppDelegate)?.showTranslator()
+    }
+
+    @objc private func openAccessibilitySettings() {
+        (NSApp.delegate as? AppDelegate)?.openAccessibilitySettings()
     }
 
     @objc private func checkSparkleUpdates() {
@@ -1259,6 +1274,10 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             }
             if let sha = result.sha256 { lines.append("SHA-256：\(sha.prefix(16))…") }
             if let path = result.path { lines.append("路径：\(path)") }
+            let permissionApps = ["Maccy", "Ice", "Espanso", "Rectangle", "AltTab", "MonitorControl"]
+            if let name = result.name, permissionApps.contains(name) {
+                lines.append("提示：该工具需要「辅助功能」权限，可在 系统设置 → 隐私与安全性 → 辅助功能 中授权")
+            }
             alert.informativeText = lines.joined(separator: "\n")
             alert.addButton(withTitle: "好")
         } else {
@@ -1438,15 +1457,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var statusItem: NSStatusItem?
     var ballWindow: NSPanel?
     var updaterController: SPUStandardUpdaterController!
+    var translatorWindow: TranslatorWindowController?
     private var hotKeyRef: EventHotKeyRef?
     private var hotKeyHandler: EventHandlerRef?
     private let silentMode = CommandLine.arguments.contains("--silent")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(silentMode ? .accessory : .regular)
-        updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        if CommandLine.arguments.contains("--translator") {
+            let showWork = DispatchWorkItem { [weak self] in self?.showTranslator() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: showWork)
+        }
         if CommandLine.arguments.contains("--sparkle-check") {
-            let work = DispatchWorkItem { [weak self] in self?.updaterController.checkForUpdates(nil) }
+            let work = DispatchWorkItem { [weak self] in self?.checkForUpdatesSparkle() }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
         }
         buildMainMenu()
@@ -1459,6 +1482,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             showBall()
         } else {
             NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
+    func showTranslator() {
+        if translatorWindow == nil {
+            translatorWindow = TranslatorWindowController()
+        }
+        translatorWindow?.showWindow(nil)
+        translatorWindow?.window?.center()
+        translatorWindow?.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func showLaunchError(appName: String, detail: String) {
+        let alert = NSAlert()
+        alert.messageText = "无法打开 \(appName)"
+        alert.informativeText = "\(detail)\n\n可能是辅助功能权限没授权，或被 Gatekeeper 拦截。"
+        alert.addButton(withTitle: "打开辅助功能设置")
+        alert.addButton(withTitle: "好")
+        if alert.runModal() == .alertFirstButtonReturn {
+            openAccessibilitySettings()
+        }
+    }
+
+    func openAccessibilitySettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
         }
     }
 
@@ -1587,7 +1637,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         statusItem = item
     }
 
+    private var sparkleStarted = false
+
+    func startSparkleIfNeeded() {
+        guard !sparkleStarted else { return }
+        sparkleStarted = true
+        if updaterController == nil {
+            updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        }
+        updaterController.startUpdater()
+    }
+
     @objc func checkForUpdatesSparkle() {
+        startSparkleIfNeeded()
         updaterController.checkForUpdates(nil)
     }
 
@@ -1611,6 +1673,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func hideSidebar() {
         window?.orderOut(nil)
         showBall()
+        let work = DispatchWorkItem { [weak self] in self?.startSparkleIfNeeded() }
+        DispatchQueue.main.async(execute: work)
     }
 
     func showBall() {
