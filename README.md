@@ -47,7 +47,7 @@ brew install --cask tool-sidebar
 ```bash
 cd tool-sidebar
 ./build.sh
-# 产物：~/Applications/小工具侧边栏.app（universal，v1.2.0）
+# 产物：~/Applications/小工具侧边栏.app（universal，v1.2.1）
 ```
 
 ## 使用

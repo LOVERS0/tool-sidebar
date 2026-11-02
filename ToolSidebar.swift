@@ -64,7 +64,7 @@ func isInstalled(_ tool: Tool) -> Bool {
 let catalogPath: String = (("~/Library/Application Support/小工具侧边栏/catalog.json") as NSString).expandingTildeInPath
 let overridesPath: String = (("~/Library/Application Support/小工具侧边栏/overrides.json") as NSString).expandingTildeInPath
 let featuredCachePath: String = (("~/Library/Application Support/小工具侧边栏/featured-cache.json") as NSString).expandingTildeInPath
-let featuredURL = URL(string: "https://raw.githubusercontent.com/LOVERS0/tool-sidebar/main/featured.json")!
+let featuredURL = URL(string: "https://api.github.com/repos/LOVERS0/tool-sidebar/contents/featured.json")!
 let launchAgentPath: String = (("~/Library/LaunchAgents/com.a1.toolsidebar.plist") as NSString).expandingTildeInPath
 
 func loadCatalogTools() -> [Tool] {
@@ -100,7 +100,13 @@ func saveOverrides(_ value: Overrides) {
 }
 
 func loadFeaturedCache() -> [Tool] {
-    guard let data = try? Data(contentsOf: URL(fileURLWithPath: featuredCachePath)),
+    var payload: Data?
+    if let cached = try? Data(contentsOf: URL(fileURLWithPath: featuredCachePath)) {
+        payload = cached
+    } else if let bundled = Bundle.main.url(forResource: "featured", withExtension: "json") {
+        payload = try? Data(contentsOf: bundled)
+    }
+    guard let data = payload,
           let file = try? JSONDecoder().decode(FeaturedFile.self, from: data) else {
         return []
     }
@@ -722,7 +728,9 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     }
 
     private func refreshFeatured() {
-        let request = URLRequest(url: featuredURL)
+        var request = URLRequest(url: featuredURL)
+        request.setValue("application/vnd.github.raw", forHTTPHeaderField: "Accept")
+        request.setValue("ToolSidebar/1.2", forHTTPHeaderField: "User-Agent")
         URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
             guard let self = self, let data = data,
                   let file = try? JSONDecoder().decode(FeaturedFile.self, from: data) else { return }

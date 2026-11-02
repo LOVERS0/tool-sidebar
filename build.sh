@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 APP="$HOME/Applications/小工具侧边栏.app"
 BUILD="$ROOT/build"
-VERSION="1.2.0"
+VERSION="1.2.1"
 SDK="$(xcrun --show-sdk-path)"
 
 rm -rf "$BUILD"
@@ -35,6 +35,9 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BUILD/ToolSidebar" "$APP/Contents/MacOS/ToolSidebar"
 if [ -f "$ROOT/assets/AppIcon.icns" ]; then
   cp "$ROOT/assets/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+fi
+if [ -f "$ROOT/featured.json" ]; then
+  cp "$ROOT/featured.json" "$APP/Contents/Resources/featured.json"
 fi
 
 cat > "$APP/Contents/Info.plist" <<PLIST
