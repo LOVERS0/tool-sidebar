@@ -1,0 +1,41 @@
+name: build
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ "v*" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          swiftc --version
+          xcodebuild -version
+
+      - name: Build universal app
+        run: ./build.sh
+
+      - name: Verify architectures
+        run: lipo -info "$HOME/Applications/小工具侧边栏.app/Contents/MacOS/ToolSidebar"
+
+      - name: Package
+        run: ditto -c -k --keepParent "$HOME/Applications/小工具侧边栏.app" ToolSidebar.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ToolSidebar
+          path: ToolSidebar.zip
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ToolSidebar.zip

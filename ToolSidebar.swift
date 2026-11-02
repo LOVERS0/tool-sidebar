@@ -1,11 +1,12 @@
 import AppKit
+import Carbon
 
 // MARK: - 数据模型
 
 struct Tool {
     let id: String
     let name: String
-    let subtitle: String
+    var subtitle: String
     let icon: String
     let group: String
     var path: String? = nil
@@ -131,20 +132,15 @@ func launchTool(_ tool: Tool) {
 }
 
 enum AgentRunner {
-    static var scriptPath: String {
-        Bundle.main.path(forResource: "toolagent", ofType: "py", inDirectory: "agent") ?? ""
-    }
-
     @discardableResult
     static func run(_ arguments: [String], completion: ((String) -> Void)? = nil) -> Process? {
-        let script = scriptPath
-        guard !script.isEmpty else {
+        guard let executable = Bundle.main.executablePath else {
             completion?("")
             return nil
         }
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-        process.arguments = [script] + arguments
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = ["--agent"] + arguments
         let output = Pipe()
         process.standardOutput = output
         process.standardError = Pipe()
@@ -214,6 +210,11 @@ final class FlippedView: NSView {
 final class ToolRowView: NSView {
     let tool: Tool
     var onClick: (() -> Void)?
+    var onInstall: (() -> Void)?
+    var onUpdate: (() -> Void)?
+    var onUninstall: (() -> Void)?
+    var onReveal: (() -> Void)?
+    var updateVersion: String?
     private let background = NSView()
     private var tracking: NSTrackingArea?
 
@@ -318,6 +319,35 @@ final class ToolRowView: NSView {
     override func mouseDown(with event: NSEvent) {
         onClick?()
     }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = NSMenu()
+        func add(_ title: String, _ action: Selector) {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
+        if isInstalled(tool) {
+            add("打开", #selector(openAction))
+            if tool.path != nil { add("在 Finder 中显示", #selector(revealAction)) }
+            if let version = updateVersion { add("更新到 v\(version)", #selector(updateAction)) }
+            if tool.repo != nil || tool.source == "catalog" { add("卸载（移到废纸篓）", #selector(uninstallAction)) }
+        } else if tool.repo != nil {
+            add("安装", #selector(installAction))
+        } else if tool.url != nil {
+            add("在浏览器中打开", #selector(webAction))
+        }
+        return menu.items.isEmpty ? nil : menu
+    }
+
+    @objc private func openAction() { onClick?() }
+    @objc private func installAction() { onInstall?() }
+    @objc private func updateAction() { onUpdate?() }
+    @objc private func uninstallAction() { onUninstall?() }
+    @objc private func revealAction() { onReveal?() }
+    @objc private func webAction() {
+        if let link = tool.url, let url = URL(string: link) { NSWorkspace.shared.open(url) }
+    }
 }
 
 // MARK: - 侧边栏控制器
@@ -331,13 +361,49 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     private var query = ""
     private var catalogTools: [Tool] = []
     private var progressPanel: NSPanel?
+    private var currentProcess: Process?
+    private var currentInstallTarget: String?
+    private var installCancelled = false
+    private var updateVersions: [String: String] = [:]
+    private var didCheckUpdates = false
 
     private var allTools: [Tool] {
-        Toolbox.builtin + catalogTools
+        var byRepo: [String: Tool] = [:]
+        var byPath: [String: Tool] = [:]
+        for item in catalogTools {
+            if let repo = item.repo { byRepo[repo] = item }
+            if let path = item.path { byPath[path] = item }
+        }
+        var merged: [Tool] = []
+        var used = Set<String>()
+        for base in Toolbox.builtin {
+            if let repo = base.repo, let catalog = byRepo[repo] {
+                var tool = base
+                tool.path = catalog.path ?? base.path
+                tool.subtitle = catalog.subtitle
+                tool.source = "catalog"
+                merged.append(tool)
+                used.insert(catalog.id)
+            } else if let path = base.path, let catalog = byPath[path] {
+                var tool = base
+                tool.subtitle = catalog.subtitle
+                tool.source = "catalog"
+                merged.append(tool)
+                used.insert(catalog.id)
+            } else {
+                merged.append(base)
+            }
+        }
+        merged.append(contentsOf: catalogTools.filter { !used.contains($0.id) })
+        return merged
     }
 
     private var groups: [String] {
-        Toolbox.builtinGroups + (catalogTools.isEmpty ? [] : ["已收录"])
+        var result = Toolbox.builtinGroups
+        if allTools.contains(where: { $0.group == "已收录" }) {
+            result.append("已收录")
+        }
+        return result
     }
 
     override func loadView() {
@@ -520,11 +586,67 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     override func viewDidAppear() {
         super.viewDidAppear()
         scrollToTop()
+        checkForUpdates()
     }
 
     func scrollToTop() {
         scrollView.contentView.scroll(to: NSPoint(x: 0, y: 0))
         scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
+
+    private func fuzzyContains(_ text: String, _ query: String) -> Bool {
+        let haystack = text.lowercased()
+        let needle = query.lowercased()
+        if haystack.contains(needle) { return true }
+        var index = haystack.startIndex
+        for character in needle {
+            guard let found = haystack[index...].firstIndex(of: character) else { return false }
+            index = haystack.index(after: found)
+        }
+        return true
+    }
+
+    private func lastJSON(_ text: String) -> [String: Any]? {
+        for line in text.split(separator: "\n").reversed() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("{"),
+                  let data = trimmed.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data),
+                  let dict = object as? [String: Any] else { continue }
+            return dict
+        }
+        return nil
+    }
+
+    private func checkForUpdates() {
+        guard !didCheckUpdates, !catalogTools.isEmpty else { return }
+        didCheckUpdates = true
+        AgentRunner.run(["check-updates"]) { [weak self] output in
+            guard let self = self, let data = self.lastJSON(output),
+                  let list = data["updates"] as? [[String: Any]] else { return }
+            for item in list {
+                if let repo = item["repo"] as? String, let latest = item["latest"] as? String {
+                    self.updateVersions[repo] = latest
+                }
+            }
+            if !self.updateVersions.isEmpty { self.rebuild() }
+        }
+    }
+
+    private func uninstall(_ tool: Tool) {
+        let alert = NSAlert()
+        alert.messageText = "卸载 \(tool.name)？"
+        alert.informativeText = "App 会移到废纸篓，并从已收录目录移除。"
+        alert.addButton(withTitle: "卸载")
+        alert.addButton(withTitle: "取消")
+        if alert.runModal() != .alertFirstButtonReturn { return }
+        let target = tool.repo ?? tool.path ?? tool.name
+        AgentRunner.run(["remove", target]) { [weak self] _ in
+            guard let self = self else { return }
+            self.catalogTools = loadCatalogTools()
+            self.updateVersions.removeAll()
+            self.rebuild()
+        }
     }
 
     func controlTextDidChange(_ obj: Notification) {
@@ -577,15 +699,24 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         AgentRunner.run(["autostart", enabled ? "on" : "off", Bundle.main.bundlePath]) { _ in }
     }
 
-    private func startInstall(target: String) {
+    private func startInstall(target: String, force: Bool = false) {
         guard progressPanel == nil else { return }
+        currentInstallTarget = target
+        installCancelled = false
         showProgress("本地 agent 正在搜索 / 下载 / 自检…")
-        AgentRunner.run(["install", target]) { [weak self] output in
+        var arguments = ["install", target]
+        if force { arguments.append("--force") }
+        currentProcess = AgentRunner.run(arguments) { [weak self] output in
             guard let self = self else { return }
+            self.currentProcess = nil
             self.progressPanel?.close()
             self.progressPanel = nil
             self.catalogTools = loadCatalogTools()
             self.rebuild()
+            if self.installCancelled {
+                self.installCancelled = false
+                return
+            }
             if let result = AgentResult.parse(output) {
                 self.showResult(result)
             } else {
@@ -594,9 +725,17 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         }
     }
 
+    @objc private func cancelInstall() {
+        installCancelled = true
+        currentProcess?.terminate()
+        currentProcess = nil
+        progressPanel?.close()
+        progressPanel = nil
+    }
+
     private func showProgress(_ text: String) {
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 360, height: 104),
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 112),
             styleMask: [.titled],
             backing: .buffered,
             defer: false
@@ -612,9 +751,15 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         content.addSubview(spinner)
 
         let label = NSTextField(wrappingLabelWithString: text)
-        label.frame = NSRect(x: 50, y: 46, width: 290, height: 44)
+        label.frame = NSRect(x: 50, y: 54, width: 290, height: 44)
         label.font = .systemFont(ofSize: 12)
         content.addSubview(label)
+
+        let cancel = NSButton(title: "取消", target: self, action: #selector(cancelInstall))
+        cancel.frame = NSRect(x: 280, y: 8, width: 64, height: 24)
+        cancel.bezelStyle = .rounded
+        cancel.font = .systemFont(ofSize: 11)
+        content.addSubview(cancel)
 
         panel.contentView = content
         panel.center()
@@ -643,6 +788,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             alert.messageText = "❌ \(result.error ?? result.message ?? "安装失败")"
             alert.informativeText = result.releaseURL.map { "agent 没找到可直接安装的 macOS 包。\n发布页（可点「复制链接」）：\n\($0)" } ?? ""
             alert.addButton(withTitle: "好")
+            if currentInstallTarget != nil { alert.addButton(withTitle: "重试") }
             if result.releaseURL != nil { alert.addButton(withTitle: "复制链接") }
         }
         present(alert, result: result)
@@ -657,15 +803,19 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     }
 
     private func present(_ alert: NSAlert, result: AgentResult?) {
-        if let window = view.window {
-            alert.beginSheetModal(for: window) { response in
-                if response == .alertSecondButtonReturn, let link = result?.releaseURL {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(link, forType: .string)
-                }
-            }
-        } else {
+        guard let window = view.window else {
             alert.runModal()
+            return
+        }
+        let retryTarget = currentInstallTarget
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self = self else { return }
+            if response == .alertSecondButtonReturn, let target = retryTarget {
+                self.startInstall(target: target)
+            } else if response == .alertThirdButtonReturn, let link = result?.releaseURL {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(link, forType: .string)
+            }
         }
     }
 
@@ -682,8 +832,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             let items = allTools.filter { tool in
                 guard tool.group == group else { return false }
                 if q.isEmpty { return true }
-                return tool.name.localizedCaseInsensitiveContains(q)
-                    || tool.subtitle.localizedCaseInsensitiveContains(q)
+                return fuzzyContains(tool.name, q) || fuzzyContains(tool.subtitle, q)
             }
             if items.isEmpty { continue }
 
@@ -701,8 +850,24 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             stack.setCustomSpacing(4, after: header)
 
             for tool in items {
-                let row = ToolRowView(tool: tool)
+                var display = tool
+                var row: ToolRowView!
+                if let repo = tool.repo, let latest = updateVersions[repo] {
+                    display.subtitle = tool.subtitle + " · 可更新 v\(latest)"
+                    row = ToolRowView(tool: display)
+                    row.updateVersion = latest
+                    row.onUpdate = { [weak self] in self?.startInstall(target: repo, force: true) }
+                } else {
+                    row = ToolRowView(tool: display)
+                }
                 row.onClick = { [weak self] in self?.handle(tool) }
+                row.onInstall = { [weak self] in self?.startInstall(target: tool.repo ?? tool.name) }
+                row.onUninstall = { [weak self] in self?.uninstall(tool) }
+                row.onReveal = { [weak self] in
+                    if let path = tool.path {
+                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: expandedPath(path))])
+                    }
+                }
                 stack.addArrangedSubview(row)
                 row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
             }
@@ -720,13 +885,37 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var window: NSWindow!
     var statusItem: NSStatusItem?
+    private var hotKeyRef: EventHotKeyRef?
+    private var hotKeyHandler: EventHandlerRef?
+    private let silentMode = CommandLine.arguments.contains("--silent")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
+        NSApp.setActivationPolicy(silentMode ? .accessory : .regular)
         buildMainMenu()
-        buildWindow()
+        if !silentMode {
+            buildWindow()
+        }
         buildStatusItem()
-        NSApp.activate(ignoringOtherApps: true)
+        registerHotKey()
+        if !silentMode {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
+    func registerHotKey() {
+        let hotKeyID = EventHotKeyID(signature: OSType(0x54534252), id: 1)
+        RegisterEventHotKey(UInt32(kVK_ANSI_T), UInt32(cmdKey | optionKey), hotKeyID,
+                            GetApplicationEventTarget(), 0, &hotKeyRef)
+        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
+                                      eventKind: UInt32(kEventHotKeyPressed))
+        let pointer = Unmanaged.passUnretained(self).toOpaque()
+        InstallEventHandler(GetApplicationEventTarget(), { _, _, userData -> OSStatus in
+            guard let userData = userData else { return noErr }
+            let delegate = Unmanaged<AppDelegate>.fromOpaque(userData).takeUnretainedValue()
+            let work = DispatchWorkItem { delegate.toggleWindow() }
+            DispatchQueue.main.async(execute: work)
+            return noErr
+        }, 1, &eventType, pointer, &hotKeyHandler)
     }
 
     func buildWindow() {
@@ -749,6 +938,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.level = .floating
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.minSize = NSSize(width: 300, height: 440)
+        window.isRestorable = false
         window.delegate = self
         window.contentViewController = SidebarViewController()
         window.setContentSize(NSSize(width: width, height: height))
@@ -757,11 +947,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.standardWindowButton(.zoomButton)?.isHidden = true
         window.initialFirstResponder = nil
 
-        window.makeKeyAndOrderFront(nil)
         self.window = window
         positionWindow()
-        let work = DispatchWorkItem { self.positionWindow() }
-        DispatchQueue.main.async(execute: work)
+        window.makeKeyAndOrderFront(nil)
+        let sizeWork = DispatchWorkItem {
+            window.setContentSize(NSSize(width: width, height: height))
+            self.positionWindow()
+        }
+        DispatchQueue.main.async(execute: sizeWork)
         let scrollWork = DispatchWorkItem {
             if let controller = window.contentViewController as? SidebarViewController {
                 controller.scrollToTop()
@@ -796,6 +989,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc func toggleWindow() {
+        if window == nil {
+            buildWindow()
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
         guard let window = window else { return }
         if window.isVisible {
             window.orderOut(nil)
@@ -806,6 +1004,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if window == nil {
+            buildWindow()
+        }
         if !flag {
             window.makeKeyAndOrderFront(nil)
         }
@@ -831,25 +1032,3 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.mainMenu = mainMenu
     }
 }
-
-// MARK: - CLI 模式（供自动化 / 本地 agent 调用）
-
-let cliArguments = CommandLine.arguments
-if let index = cliArguments.firstIndex(of: "--agent"), index + 1 < cliArguments.count {
-    let args = Array(cliArguments[(index + 1)...])
-    guard let script = Bundle.main.path(forResource: "toolagent", ofType: "py", inDirectory: "agent") else {
-        FileHandle.standardError.write("agent script not found\n".data(using: .utf8)!)
-        exit(2)
-    }
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-    process.arguments = [script] + args
-    try? process.run()
-    process.waitUntilExit()
-    exit(process.terminationStatus)
-}
-
-let app = NSApplication.shared
-let delegate = AppDelegate()
-app.delegate = delegate
-app.run()
