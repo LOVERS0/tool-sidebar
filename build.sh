@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 APP="$HOME/Applications/小工具侧边栏.app"
 BUILD="$ROOT/build"
-VERSION="1.4.0"
+VERSION="1.5.0"
 SDK="$(xcrun --show-sdk-path)"
 
 echo "== Sparkle 框架 =="
@@ -18,8 +18,8 @@ mkdir -p "$BUILD"
 echo "== 编译 arm64 =="
 xcrun swiftc -O -swift-version 5 \
   -target arm64-apple-macosx13.0 \
-  "$ROOT/main.swift" "$ROOT/ToolSidebar.swift" "$ROOT/Agent.swift" \
-  -framework AppKit -framework Carbon -framework Sparkle \
+  "$ROOT/main.swift" "$ROOT/ToolSidebar.swift" "$ROOT/Agent.swift" "$ROOT/Translator.swift" \
+  -framework AppKit -framework Carbon -framework Sparkle -Xlinker -weak_framework -Xlinker Translation \
   -F "$SPARKLE" -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
   -sdk "$SDK" \
   -o "$BUILD/ToolSidebar-arm64"
@@ -27,8 +27,8 @@ xcrun swiftc -O -swift-version 5 \
 echo "== 编译 x86_64 =="
 xcrun swiftc -O -swift-version 5 \
   -target x86_64-apple-macosx13.0 \
-  "$ROOT/main.swift" "$ROOT/ToolSidebar.swift" "$ROOT/Agent.swift" \
-  -framework AppKit -framework Carbon -framework Sparkle \
+  "$ROOT/main.swift" "$ROOT/ToolSidebar.swift" "$ROOT/Agent.swift" "$ROOT/Translator.swift" \
+  -framework AppKit -framework Carbon -framework Sparkle -Xlinker -weak_framework -Xlinker Translation \
   -F "$SPARKLE" -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
   -sdk "$SDK" \
   -o "$BUILD/ToolSidebar-x86_64"
