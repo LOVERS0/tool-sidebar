@@ -9,7 +9,7 @@ VERSION="1.4.0"
 SDK="$(xcrun --show-sdk-path)"
 
 echo "== Sparkle 框架 =="
-"$ROOT/scripts/fetch-sparkle.sh" "$ROOT/vendor"
+/bin/bash "$ROOT/scripts/fetch-sparkle.sh" "$ROOT/vendor"
 SPARKLE="$ROOT/vendor"
 
 rm -rf "$BUILD"
