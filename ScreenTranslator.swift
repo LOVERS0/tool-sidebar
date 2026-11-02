@@ -196,7 +196,7 @@ enum ScreenTranslator {
         var results: [ScreenTranslationItem] = []
         func next(_ index: Int) {
             guard index < lines.count else {
-                let controller = TranslationOverlayController(screenshot: screenshot, items: results)
+                let controller = ScreenTranslationPanelController(items: results)
                 _ = controller
                 return
             }
@@ -228,5 +228,82 @@ enum ScreenTranslator {
         alert.informativeText = detail
         alert.addButton(withTitle: "好")
         alert.runModal()
+    }
+}
+
+// MARK: - 屏幕翻译结果面板（对照阅读）
+
+final class ScreenTranslationPanelController: NSWindowController {
+    static var current: ScreenTranslationPanelController?
+
+    init(items: [ScreenTranslationItem]) {
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 620),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = "屏幕翻译"
+        panel.isReleasedWhenClosed = false
+        panel.level = .floating
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 620))
+        let scroll = NSScrollView(frame: NSRect(x: 12, y: 48, width: 396, height: 560))
+        scroll.autoresizingMask = [.width, .height]
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .bezelBorder
+        let textView = NSTextView()
+        textView.isEditable = false
+        textView.isRichText = false
+        textView.font = .systemFont(ofSize: 12.5)
+        textView.textContainerInset = NSSize(width: 8, height: 8)
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.widthTracksTextView = true
+        var body = ""
+        for item in items {
+            body += item.source + "\n→ " + item.translation + "\n\n"
+        }
+        textView.string = body
+        scroll.documentView = textView
+
+        let copyButton = NSButton(title: "复制全部", target: nil, action: nil)
+        copyButton.bezelStyle = .rounded
+        copyButton.frame = NSRect(x: 12, y: 12, width: 90, height: 28)
+        let closeButton = NSButton(title: "关闭", target: nil, action: nil)
+        closeButton.bezelStyle = .rounded
+        closeButton.frame = NSRect(x: 110, y: 12, width: 70, height: 28)
+
+        content.addSubview(scroll)
+        content.addSubview(copyButton)
+        content.addSubview(closeButton)
+        panel.contentView = content
+        super.init(window: panel)
+
+        copyButton.target = self
+        copyButton.action = #selector(copyAll(_:))
+        closeButton.target = self
+        closeButton.action = #selector(closePanel)
+        panel.makeKeyAndOrderFront(nil)
+        if let screen = NSScreen.main {
+            let frame = screen.visibleFrame
+            panel.setFrameOrigin(NSPoint(x: frame.maxX - 440, y: frame.midY - 310))
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        ScreenTranslationPanelController.current = self
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    @objc private func copyAll(_ sender: Any?) {
+        if let textView = (window?.contentView?.subviews.compactMap { $0 as? NSScrollView }.first?.documentView as? NSTextView) {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(textView.string, forType: .string)
+        }
+    }
+
+    @objc private func closePanel() {
+        window?.orderOut(nil)
+        ScreenTranslationPanelController.current = nil
     }
 }
