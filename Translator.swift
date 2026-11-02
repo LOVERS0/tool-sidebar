@@ -156,6 +156,7 @@ enum Translator {
             completion("", false)
             return
         }
+        #if canImport(Translation)
         if #available(macOS 26.0, *) {
             Task {
                 if let result = await systemTranslate(trimmed, toChinese: toChinese) {
@@ -167,11 +168,13 @@ enum Translator {
                     DispatchQueue.main.async(execute: work)
                 }
             }
-        } else {
-            completion(dictionaryTranslate(trimmed, toChinese: toChinese), false)
+            return
         }
+        #endif
+        completion(dictionaryTranslate(trimmed, toChinese: toChinese), false)
     }
 
+    #if canImport(Translation)
     @available(macOS 26.0, *)
     private static func systemTranslate(_ text: String, toChinese: Bool) async -> String? {
         let source = Locale.Language(identifier: toChinese ? "en" : "zh-Hans")
@@ -184,8 +187,10 @@ enum Translator {
             return nil
         }
     }
+    #endif
 
     static func translateSync(_ text: String, toChinese: Bool) -> (String, Bool) {
+        #if canImport(Translation)
         if #available(macOS 26.0, *) {
             let semaphore = DispatchSemaphore(value: 0)
             var output: String?
@@ -200,6 +205,7 @@ enum Translator {
             _ = semaphore.wait(timeout: .now() + 20)
             if let output = output { return (output, system) }
         }
+        #endif
         return (dictionaryTranslate(text, toChinese: toChinese), false)
     }
 }
