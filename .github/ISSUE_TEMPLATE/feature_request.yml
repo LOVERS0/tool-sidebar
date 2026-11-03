@@ -1,0 +1,21 @@
+name: Feature request
+description: Suggest an improvement or a new tool
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+    validations:
+      required: true
+  - type: input
+    id: tool
+    attributes:
+      label: Tool / GitHub repo (if applicable)
+      placeholder: owner/repo
