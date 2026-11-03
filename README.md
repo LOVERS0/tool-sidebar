@@ -6,7 +6,7 @@
 
 [English](README.en.md) · [官网](https://lovers0.github.io/tool-sidebar/) · [下载](https://github.com/LOVERS0/tool-sidebar/releases/latest) · [反馈](https://github.com/LOVERS0/tool-sidebar/issues)
 
-macOS 13+ 的悬浮小工具侧边栏 + 本地安装 agent：把写作 / AI / 系统小工具收进一列，点一下启动；没装的工具，点一下由本地 agent 自动搜索 GitHub → 下载 → 自检 → 安装 → 收录。
+macOS 13+ 的悬浮小工具侧边栏 + 自动安装助手：把写作 / AI / 系统小工具收进一列，点一下启动；没装的工具，点一下由安装助手自动搜索 GitHub → 下载 → 自检 → 安装 → 收录。
 
 ![侧边栏截图](screenshot.png)
 
@@ -36,7 +36,7 @@ brew install --cask tool-sidebar
 - **一列管所有工具**：内置 26 个（写作 / AI 开发 / 系统小工具），分组、模糊搜索、绿点=已装，点一下启动。
 - **键盘优先**：`↑↓` 在可见列表里上下选中（自动滚动跟随），`⏎` 打开 / 安装，`Esc` 先清空搜索、再收起侧边栏，`⌘F` 聚焦搜索框；鼠标点过的行会同步成选中行，输入法拼音选词时不抢回车。
 - **搜索空状态**：没有匹配时给提示，不只是一片空白。
-- **本地 agent 全自动安装**：查最新 Release → 选 macOS 包 → 下载 → 自检 → 装到 `~/Applications` → 写入「已收录」，全程不弹浏览器。
+- **安装助手全自动安装**：查最新 Release → 选 macOS 包 → 下载 → 自检 → 装到 `~/Applications` → 写入「已收录」，全程不弹浏览器。
 - **自检**：
   - 与 GitHub API 提供的官方 `digest`（SHA-256）比对，不一致直接停止；
   - `codesign --verify --deep --strict` 签名校验，不通过不安装；
@@ -56,7 +56,7 @@ brew install --cask tool-sidebar
 - **全局快捷键 ⌥⌘T**：随时呼出/隐藏侧边栏。
 - **打不开的工具**：有现成安装包的自动装；没有的（如 Typst、novelWriter）会提示并可直接打开发布页，不再卡住。
 - 菜单栏图标、窗口置顶、`Esc` 隐藏、`⌘Q` 退出。
-- **纯 Swift 实现**：agent 也是 Swift，无 Python / 无第三方运行时依赖。
+- **纯 Swift 实现**：安装器也是 Swift，无 Python / 无第三方运行时依赖。
 
 ## 兼容性
 
@@ -87,7 +87,7 @@ cd tool-sidebar
 ## 使用
 
 - 点绿点行：启动对应 App（MarkItDown 行点击复制命令）。
-- 点灰点行：本地 agent 自动搜索 / 下载 / 自检 / 安装。
+- 点灰点行：安装助手自动搜索 / 下载 / 自检 / 安装。
 - 键盘：`↑↓` 选中、`⏎` 打开 / 安装选中项、`⌘F` 聚焦搜索、`Esc` 清搜索 / 收起。
 - 顶栏 `+`：输入 `owner/repo`、GitHub 链接或搜索词，任意收录。
 - 右键行：更新、卸载、在 Finder 中显示。
@@ -135,7 +135,7 @@ APP="$HOME/Applications/小工具侧边栏.app/Contents/MacOS/ToolSidebar"
 ```
 main.swift               # 入口 / CLI 分发
 ToolSidebar.swift        # AppKit 界面与交互
-Agent.swift              # 本地安装 agent（纯 Swift）
+Agent.swift              # 自动安装助手（纯 Swift）
 featured.json            # 远程精选源
 appcast.xml              # Sparkle 官方更新源（EdDSA 签名）
 scripts/fetch-sparkle.sh # 下载 Sparkle 框架
