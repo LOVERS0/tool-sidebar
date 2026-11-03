@@ -297,7 +297,7 @@ final class TranslatorWindowController: NSWindowController {
         statusLabel.lineBreakMode = .byTruncatingTail
         statusLabel.frame = NSRect(x: 274, y: 230, width: 232, height: 18)
         statusLabel.autoresizingMask = [.width]
-        statusLabel.stringValue = L10n.t("内置词库（可在 ⋯ 开启在线翻译）", "Offline dictionary (online translation is opt-in via ⋯)")
+        statusLabel.stringValue = L10n.t("内置词库 · ⋯ 可开启在线翻译", "Offline dictionary · online opt-in")
 
         inputView.string = "Clipboard history manager for macOS"
 
