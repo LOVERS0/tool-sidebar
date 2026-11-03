@@ -14,6 +14,7 @@
 - Batch install, update checks, uninstall, migration export/import, custom categories/rename/order.
 - Collapse into a draggable floating ball; optional silent launch at login.
 - Sparkle appcast auto-update + native fallback.
+- English UI automatically on non-Chinese systems (tool names, descriptions, groups and menus are localized).
 - Optional CN↔EN dictionary translator (offline by default; online opt-in). For serious translation use Easydict/Pot from the curated list.
 
 ## Requirements
@@ -35,6 +36,11 @@ brew tap lovers0/tool-sidebar
 brew install --cask tool-sidebar
 ```
 If Gatekeeper blocks it, add `--no-quarantine`.
+
+## Build / release / notarization
+
+- Release automation: `./scripts/release.sh 1.9.0` — build, sign, tag, wait for CI, upload, update appcast and Homebrew. See [RELEASE.md](RELEASE.md).
+- Apple notarization requires a $99/year Developer Program account; see [NOTARIZATION.md](NOTARIZATION.md).
 
 ## Build from source
 
