@@ -435,11 +435,11 @@ final class ToolRowView: NSView {
             menu.addItem(item)
         }
         if isInstalled(tool) {
-            add("打开", #selector(openAction))
-            if tool.path != nil { add("在 Finder 中显示", #selector(revealAction)) }
-            if let version = updateVersion { add("更新到 v\(version)", #selector(updateAction)) }
-            if tool.repo != nil || tool.source == "catalog" { add("卸载（移到废纸篓）", #selector(uninstallAction)) }
-            add("重命名…", #selector(renameAction))
+            add(L10n.t("打开", "Open"), #selector(openAction))
+            if tool.path != nil { add(L10n.t("在 Finder 中显示", "Show in Finder"), #selector(revealAction)) }
+            if let version = updateVersion { add(L10n.t("更新到 v\(version)", "Update to v\(version)"), #selector(updateAction)) }
+            if tool.repo != nil || tool.source == "catalog" { add(L10n.t("卸载（移到废纸篓）", "Uninstall (move to Trash)"), #selector(uninstallAction)) }
+            add(L10n.t("重命名…", "Rename…"), #selector(renameAction))
             add("上移", #selector(moveUpAction))
             add("下移", #selector(moveDownAction))
 
@@ -461,7 +461,7 @@ final class ToolRowView: NSView {
             categoryItem.submenu = categoryMenu
             menu.addItem(categoryItem)
         } else if tool.repo != nil {
-            add("安装", #selector(installAction))
+            add(L10n.t("安装", "Install"), #selector(installAction))
         } else if tool.url != nil {
             add("在浏览器中打开", #selector(webAction))
         }
@@ -572,10 +572,13 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             var tool = item
             if let custom = overrides.names[item.id], !custom.isEmpty {
                 tool.name = custom
+            } else if L10n.isEnglish {
+                tool.name = L10n.name(tool.name)
             }
             if let category = overrides.categories[item.id], !category.isEmpty {
                 tool.group = category
             }
+            tool.subtitle = L10n.subtitle(tool.subtitle)
             return tool
         }
     }
@@ -622,7 +625,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     }
 
     private func buildHeader() {
-        let title = NSTextField(labelWithString: "小工具")
+        let title = NSTextField(labelWithString: L10n.t("小工具", "Tools"))
         title.font = .systemFont(ofSize: 17, weight: .bold)
         title.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(title)
@@ -678,7 +681,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     }
 
     private func buildSearch() {
-        searchField.placeholderString = "搜索工具…"
+        searchField.placeholderString = L10n.t("搜索工具…", "Search tools…")
         searchField.font = .systemFont(ofSize: 12)
         searchField.controlSize = .small
         searchField.delegate = self
@@ -738,19 +741,19 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         dot.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(dot)
 
-        let hint = NSTextField(labelWithString: "↑↓ 选择 · ⏎ 打开 · esc 收起")
+        let hint = NSTextField(labelWithString: L10n.t("↑↓ 选择 · ⏎ 打开 · esc 收起", "↑↓ select · ⏎ open · esc hide"))
         hint.font = .systemFont(ofSize: 9)
         hint.textColor = .secondaryLabelColor
         hint.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(hint)
 
-        let auto = NSButton(checkboxWithTitle: "开机自启", target: self, action: #selector(toggleAutostart(_:)))
+        let auto = NSButton(checkboxWithTitle: L10n.t("开机自启", "Launch at login"), target: self, action: #selector(toggleAutostart(_:)))
         auto.state = autostartEnabled() ? .on : .off
         auto.font = .systemFont(ofSize: 9.5)
         auto.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(auto)
 
-        let quit = NSButton(title: "退出", target: self, action: #selector(quitApp))
+        let quit = NSButton(title: L10n.t("退出", "Quit"), target: self, action: #selector(quitApp))
         quit.isBordered = false
         quit.font = .systemFont(ofSize: 10)
         quit.contentTintColor = .secondaryLabelColor
@@ -900,7 +903,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         alert.messageText = "重命名"
         alert.informativeText = "给「\(tool.name)」起一个你习惯的名字（留空恢复默认）。"
         alert.addButton(withTitle: "保存")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: L10n.t("取消", "Cancel"))
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
         field.stringValue = tool.name
         alert.accessoryView = field
@@ -1116,7 +1119,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         let alert = NSAlert()
         alert.messageText = "从 GitHub 收录工具"
         alert.informativeText = "输入 owner/repo、完整链接，或一个搜索词；本地 agent 会搜索、下载、自检、安装并收录。"
-        alert.addButton(withTitle: "开始")
+        alert.addButton(withTitle: L10n.t("开始", "Start"))
         alert.addButton(withTitle: "取消")
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
         field.placeholderString = "例如：rxhanson/Rectangle 或 窗口管理"
@@ -1135,15 +1138,15 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             item.target = self
             menu.addItem(item)
         }
-        add("批量安装未安装工具…", #selector(batchInstall))
-        add("检查更新（Sparkle）…", #selector(checkSparkleUpdates))
-        add("中英翻译…", #selector(showTranslatorWindow))
-        add(Translator.onlineEnabled ? "关闭在线翻译（MyMemory）" : "开启在线翻译（MyMemory）", #selector(toggleOnlineTranslation))
-        add("打开辅助功能设置…", #selector(openAccessibilitySettings))
-        add("GitHub 仓库 / 反馈…", #selector(openGitHubRepo))
+        add(L10n.t("批量安装未安装工具…", "Batch install missing tools…"), #selector(batchInstall))
+        add(L10n.t("检查更新（Sparkle）…", "Check updates (Sparkle)…"), #selector(checkSparkleUpdates))
+        add(L10n.t("中英翻译…", "CN ↔ EN translator…"), #selector(showTranslatorWindow))
+        add(Translator.onlineEnabled ? L10n.t("关闭在线翻译（MyMemory）", "Disable online translation (MyMemory)") : L10n.t("开启在线翻译（MyMemory）", "Enable online translation (MyMemory)"), #selector(toggleOnlineTranslation))
+        add(L10n.t("打开辅助功能设置…", "Open Accessibility settings…"), #selector(openAccessibilitySettings))
+        add(L10n.t("GitHub 仓库 / 反馈…", "GitHub repo / feedback…"), #selector(openGitHubRepo))
         menu.addItem(NSMenuItem.separator())
-        add("导出配置…", #selector(exportConfig))
-        add("导入配置…", #selector(importConfig))
+        add(L10n.t("导出配置…", "Export settings…"), #selector(exportConfig))
+        add(L10n.t("导入配置…", "Import settings…"), #selector(importConfig))
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
     }
 
@@ -1185,17 +1188,17 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         let targets = pending.filter { !$0.manual }
         guard !targets.isEmpty else {
             if manualTargets.isEmpty {
-                showError("没有待安装的工具", detail: "所有带 GitHub 仓库的工具都已经安装。")
+                showError(L10n.t("没有待安装的工具", "Nothing to install"), detail: L10n.t("所有带 GitHub 仓库的工具都已经安装。", "Every tool with a GitHub repo is already installed."))
             } else {
-                showError("剩下的都需要手动下载", detail: "需手动下载：" + manualTargets.map { $0.name }.joined(separator: "、"))
+                showError(L10n.t("剩下的都需要手动下载", "The rest need manual downloads"), detail: L10n.t("需手动下载：", "Manual download: ") + manualTargets.map { $0.name }.joined(separator: ", "))
             }
             return
         }
         let alert = NSAlert()
-        alert.messageText = "批量安装 \(targets.count) 个工具？"
-        var detail = "会按顺序下载、自检、安装，耗时取决于网速，过程中可以取消。"
+        alert.messageText = L10n.t("批量安装 \(targets.count) 个工具？", "Batch install \(targets.count) tools?")
+        var detail = L10n.t("会按顺序下载、自检、安装，耗时取决于网速，过程中可以取消。", "Downloads, verifies and installs them one by one. This can take a while and can be cancelled.")
         if !manualTargets.isEmpty {
-            detail += "\n\n将跳过 \(manualTargets.count) 个需手动下载的：" + manualTargets.map { $0.name }.joined(separator: "、")
+            detail += "\n\n" + L10n.t("将跳过 \(manualTargets.count) 个需手动下载的：", "Skipping \(manualTargets.count) manual-download tools: ") + manualTargets.map { $0.name }.joined(separator: ", ")
         }
         alert.informativeText = detail
         alert.addButton(withTitle: "开始")
@@ -1221,7 +1224,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         guard !batchCancelled else { finishBatch(); return }
         guard batchIndex < batchQueue.count else { finishBatch(); return }
         let tool = batchQueue[batchIndex]
-        showProgress("批量安装 \(batchIndex + 1)/\(batchQueue.count)：\(tool.name)…")
+        showProgress(L10n.t("批量安装 \(batchIndex + 1)/\(batchQueue.count)：\(tool.name)…", "Installing \(batchIndex + 1)/\(batchQueue.count): \(tool.name)…"))
         currentProcess = AgentRunner.run(["install", tool.repo ?? tool.name]) { [weak self] output in
             guard let self = self else { return }
             self.currentProcess = nil
@@ -1248,15 +1251,15 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         catalogTools = loadCatalogTools()
         rebuild()
         let alert = NSAlert()
-        alert.messageText = "批量安装完成"
-        var lines = ["成功 \(batchSucceeded) 个 / 共 \(total) 个"]
+        alert.messageText = L10n.t("批量安装完成", "Batch install finished")
+        var lines = [L10n.t("成功 \(batchSucceeded) 个 / 共 \(total) 个", "Succeeded \(batchSucceeded) / \(total)")]
         if !failed.isEmpty {
-            lines.append("失败 \(failed.count) 个：")
+            lines.append(L10n.t("失败 \(failed.count) 个：", "Failed \(failed.count):"))
             lines.append(contentsOf: failed.prefix(5))
             if failed.count > 5 { lines.append("…") }
         }
         if !skipped.isEmpty {
-            lines.append("跳过 \(skipped.count) 个需手动下载：" + skipped.prefix(4).joined(separator: "、"))
+            lines.append(L10n.t("跳过 \(skipped.count) 个需手动下载：", "Skipped \(skipped.count) manual downloads: ") + skipped.prefix(4).joined(separator: ", "))
         }
         alert.informativeText = lines.joined(separator: "\n")
         alert.addButton(withTitle: "好")
@@ -1502,7 +1505,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         var isFirstGroup = true
 
         if let version = availableAppVersion {
-            let button = NSButton(title: "⬆ 发现新版本 v\(version) · 点击更新", target: self, action: #selector(runAppUpdate))
+            let button = NSButton(title: L10n.t("⬆ 发现新版本 v\(version) · 点击更新", "⬆ Update available v\(version) · click to install"), target: self, action: #selector(runAppUpdate))
             button.bezelStyle = .rounded
             button.font = .systemFont(ofSize: 11, weight: .medium)
             button.contentTintColor = .controlAccentColor
@@ -1527,7 +1530,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
                 stack.addArrangedSubview(spacer)
             }
 
-            let header = NSTextField(labelWithString: group.uppercased())
+            let header = NSTextField(labelWithString: L10n.group(group).uppercased())
             header.font = .systemFont(ofSize: 9.5, weight: .semibold)
             header.textColor = .secondaryLabelColor
             stack.addArrangedSubview(header)
@@ -1537,7 +1540,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
                 var display = tool
                 var row: ToolRowView!
                 if let repo = tool.repo, let latest = updateVersions[repo] {
-                    display.subtitle = tool.subtitle + " · 可更新 v\(latest)"
+                    display.subtitle = tool.subtitle + (L10n.isEnglish ? " · update v\(latest)" : " · 可更新 v\(latest)")
                     row = ToolRowView(tool: display)
                     row.updateVersion = latest
                     row.onUpdate = { [weak self] in self?.startInstall(target: repo, force: true) }
@@ -1579,20 +1582,20 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         }
 
         let installed = allTools.filter { isInstalled($0) }.count
-        countLabel.stringValue = "\(installed) / \(allTools.count) 已装"
+        countLabel.stringValue = L10n.t("\(installed) / \(allTools.count) 已装", "\(installed) / \(allTools.count) installed")
     }
 
     private func addEmptyState(query: String) {
         let wrapper = NSView()
         wrapper.translatesAutoresizingMaskIntoConstraints = false
 
-        let title = NSTextField(labelWithString: "没有匹配「\(query)」的工具")
+        let title = NSTextField(labelWithString: L10n.t("没有匹配「\(query)」的工具", "No tools match “\(query)”"))
         title.font = .systemFont(ofSize: 12)
         title.textColor = .secondaryLabelColor
         title.alignment = .center
         title.translatesAutoresizingMaskIntoConstraints = false
 
-        let hint = NSTextField(labelWithString: "试试更短的关键词，或用 + 从 GitHub 收录")
+        let hint = NSTextField(labelWithString: L10n.t("试试更短的关键词，或用 + 从 GitHub 收录", "Try a shorter keyword, or use + to add from GitHub"))
         hint.font = .systemFont(ofSize: 10)
         hint.textColor = .tertiaryLabelColor
         hint.alignment = .center
@@ -1805,7 +1808,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "小工具侧边栏"
+        window.title = L10n.t("小工具侧边栏", "ToolSidebar")
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
@@ -1962,12 +1965,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         mainMenu.addItem(appMenuItem)
 
         let appMenu = NSMenu()
-        let updateItem = NSMenuItem(title: "检查更新…", action: #selector(checkForUpdatesSparkle), keyEquivalent: "")
+        let updateItem = NSMenuItem(title: L10n.t("检查更新…", "Check for updates…"), action: #selector(checkForUpdatesSparkle), keyEquivalent: "")
         updateItem.target = self
         appMenu.addItem(updateItem)
-        appMenu.addItem(withTitle: "隐藏窗口", action: #selector(toggleWindow), keyEquivalent: "h")
+        appMenu.addItem(withTitle: L10n.t("隐藏窗口", "Hide Window"), action: #selector(toggleWindow), keyEquivalent: "h")
         appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(withTitle: "退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: L10n.t("退出", "Quit"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appMenuItem.submenu = appMenu
 
         NSApp.mainMenu = mainMenu
