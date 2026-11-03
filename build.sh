@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 APP="$HOME/Applications/小工具侧边栏.app"
 BUILD="$ROOT/build"
-VERSION="1.8.4"
+VERSION="1.8.5"
 SDK="$(xcrun --show-sdk-path)"
 
 echo "== Sparkle 框架 =="
@@ -65,7 +65,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
-  <key>SUFeedURL</key><string>https://github.com/LOVERS0/tool-sidebar/releases/latest/download/appcast.xml</string>
+  <key>SUFeedURL</key><string>https://lovers0.github.io/tool-sidebar/appcast.xml</string>
   <key>SUPublicEDKey</key><string>jRnhK89c0mENrR/Xh96Pw6JoF0S9P1g4ACaZLJllO68=</string>
   <key>SUEnableAutomaticChecks</key><true/>
   <key>SUScheduledCheckInterval</key><integer>86400</integer>
