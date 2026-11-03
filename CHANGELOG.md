@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.9.0
+- Bilingual UI: English automatically on non-Chinese systems; tool names, subtitles, groups, menus, batch and translator are localized.
+- Localized bundle display name via `en.lproj` / `zh-Hans.lproj`.
+- `scripts/release.sh`: build → sign → tag → wait for CI → upload → appcast → Homebrew in one command.
+- `build.sh` accepts `SIGN_IDENTITY` / `NOTARY_PROFILE` for Developer ID signing and notarization.
+- Added `NOTARIZATION.md` and `RELEASE.md`.
+
 ## 1.8.5
 - Batch install now skips tools that only have manual downloads, and reports them as skipped instead of failed.
 - Added `⋯ → GitHub 仓库 / 反馈…`.
