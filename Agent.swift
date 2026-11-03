@@ -224,6 +224,22 @@ enum AgentCLI {
         return text
     }
 
+    static func isNewer(_ lhs: String, _ rhs: String) -> Bool {
+        let left = lhs.split(separator: ".").map { Int($0) }
+        let right = rhs.split(separator: ".").map { Int($0) }
+        guard !left.isEmpty, !right.isEmpty,
+              left.allSatisfy({ $0 != nil }), right.allSatisfy({ $0 != nil }) else {
+            return false
+        }
+        let count = max(left.count, right.count)
+        for index in 0..<count {
+            let a = index < left.count ? (left[index] ?? 0) : 0
+            let b = index < right.count ? (right[index] ?? 0) : 0
+            if a != b { return a > b }
+        }
+        return false
+    }
+
     static func parseRepo(_ input: String) -> (owner: String, repo: String)? {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         if let range = text.range(of: "github.com/") {
@@ -661,7 +677,7 @@ enum AgentCLI {
                   pickAsset(assets) != nil else { continue }
             let current = normalizeVersion(tool["version"] as? String ?? "")
             let latest = normalizeVersion(tag)
-            if !latest.isEmpty && latest != current {
+            if !latest.isEmpty && isNewer(latest, current) {
                 updates.append([
                     "repo": repo,
                     "name": tool["name"] as? String ?? "",
@@ -696,7 +712,7 @@ enum AgentCLI {
             "ok": true,
             "current": current,
             "latest": latest,
-            "update": latest != current,
+            "update": isNewer(latest, current),
             "release_url": release["html_url"] as? String ?? "",
         ]
         if let asset = zipAsset {
@@ -716,6 +732,10 @@ enum AgentCLI {
               let urlString = asset["browser_download_url"] as? String,
               let url = URL(string: urlString) else {
             return fail("没有找到可用的更新包")
+        }
+        let latest = normalizeVersion(release["tag_name"] as? String ?? "")
+        guard isNewer(latest, currentAppVersion()) else {
+            return fail("已是最新版本")
         }
         let updateDir = home + "/Library/Caches/ToolSidebar/update"
         try? FileManager.default.removeItem(atPath: updateDir)
@@ -755,11 +775,15 @@ enum AgentCLI {
         }
         if action == "on" {
             guard !appPath.isEmpty else { return fail("缺少 App 路径") }
+            let bundle = appPath.hasSuffix(".app") ? appPath : appPath + ".app"
+            guard fm.fileExists(atPath: bundle) else {
+                return fail("找不到 App：\(bundle)")
+            }
             try? fm.createDirectory(atPath: launchAgentPath.replacingOccurrences(of: "/com.a1.toolsidebar.plist", with: ""),
                                     withIntermediateDirectories: true)
             let plist: [String: Any] = [
                 "Label": "com.a1.toolsidebar",
-                "ProgramArguments": [appPath, "--silent"],
+                "ProgramArguments": ["/usr/bin/open", "-g", "-a", bundle, "--args", "--silent"],
                 "RunAtLoad": true,
                 "ProcessType": "Interactive",
             ]
