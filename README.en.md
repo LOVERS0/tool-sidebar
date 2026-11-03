@@ -1,6 +1,6 @@
 # ToolSidebar
 
-> A floating macOS sidebar for your writing, AI and system utilities — with a local agent that searches GitHub, downloads, verifies and installs tools for you.
+> A floating macOS sidebar for your writing, AI and system utilities — with a built-in installer that searches GitHub, downloads, verifies and installs tools for you.
 
 [中文说明](README.md) · [Download](https://github.com/LOVERS0/tool-sidebar/releases) · [Website](https://lovers0.github.io/tool-sidebar/)
 
@@ -10,7 +10,7 @@
 
 - One column for all your small tools (26 built in, grouped + fuzzy search), green dot = installed, click to launch.
 - Keyboard-first: `↑↓` select, `⏎` open/install, `Esc` clear/close, `⌘F` search, `⌥⌘T` toggle sidebar.
-- **Local install agent**: find latest GitHub Release → pick macOS asset → download → verify SHA-256/signature/Gatekeeper → install to `~/Applications` → add to catalog. No browser windows.
+- **Built-in installer**: find latest GitHub Release → pick macOS asset → download → verify SHA-256/signature/Gatekeeper → install to `~/Applications` → add to catalog. No browser windows.
 - Batch install, update checks, uninstall, migration export/import, custom categories/rename/order.
 - Collapse into a draggable floating ball; optional silent launch at login.
 - Sparkle appcast auto-update + native fallback.
