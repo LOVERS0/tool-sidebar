@@ -152,11 +152,11 @@ enum Toolbox {
         Tool(id: "novelwriter", name: "novelWriter", subtitle: "小说工程 / 章节 / 情节线 · 需手动下载", icon: "list.bullet.rectangle", group: "写作", url: "https://github.com/saga-soft/novelWriter/releases", repo: "saga-soft/novelWriter", manual: true),
         Tool(id: "typst", name: "Typst", subtitle: "排版出 PDF / 样书 · 需手动下载", icon: "doc.richtext", group: "写作", url: "https://github.com/typst/typst/releases", repo: "typst/typst", manual: true),
         Tool(id: "doocsmd", name: "公众号排版 doocs/md", subtitle: "Markdown → 微信样式", icon: "doc.plaintext", group: "写作", url: "https://md.doocs.org/"),
-        Tool(id: "avoidai", name: "去 AI 味 avoid-ai-writing", subtitle: "Agent Skill · 需配合 agent", icon: "eraser", group: "写作", url: "https://github.com/conorbronsdon/avoid-ai-writing"),
+        Tool(id: "avoidai", name: "去 AI 味 avoid-ai-writing", subtitle: "AI Skill · 需配合 AI 助手", icon: "eraser", group: "写作", url: "https://github.com/conorbronsdon/avoid-ai-writing"),
 
         // AI / 开发
         Tool(id: "ccswitch", name: "CC Switch", subtitle: "一键切换 AI 供应商", icon: "arrow.triangle.2.circlepath", group: "AI / 开发", path: "~/Applications/CC Switch.app", repo: "farion1231/cc-switch"),
-        Tool(id: "dsh", name: "DeepSeek Harness", subtitle: "当前使用的 agent harness", icon: "terminal", group: "AI / 开发", path: "/Applications/DeepSeek Harness.app"),
+        Tool(id: "dsh", name: "DeepSeek Harness", subtitle: "当前使用的 AI 工作台", icon: "terminal", group: "AI / 开发", path: "/Applications/DeepSeek Harness.app"),
         Tool(id: "dshdesktop", name: "DSH Desktop", subtitle: "桌面版", icon: "macwindow", group: "AI / 开发", path: "/Applications/DSH Desktop.app"),
         Tool(id: "githubdesktop", name: "GitHub Desktop", subtitle: "Git 图形客户端", icon: "arrow.triangle.branch", group: "AI / 开发", path: "/Applications/GitHub Desktop.app"),
         Tool(id: "openclaw", name: "OpenClaw", subtitle: "个人 AI 助理", icon: "sparkles", group: "AI / 开发", repo: "openclaw/openclaw"),
@@ -1118,7 +1118,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     @objc private func addRepo() {
         let alert = NSAlert()
         alert.messageText = "从 GitHub 收录工具"
-        alert.informativeText = "输入 owner/repo、完整链接，或一个搜索词；本地 agent 会搜索、下载、自检、安装并收录。"
+        alert.informativeText = "输入 owner/repo、完整链接，或一个搜索词；安装助手会搜索、下载、自检、安装并收录。"
         alert.addButton(withTitle: L10n.t("开始", "Start"))
         alert.addButton(withTitle: "取消")
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
@@ -1370,7 +1370,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         guard progressPanel == nil else { return }
         currentInstallTarget = target
         installCancelled = false
-        showProgress("本地 agent 正在搜索 / 下载 / 自检…")
+        showProgress(L10n.t("正在搜索、下载并自检…", "Searching, downloading and verifying…"))
         var arguments = ["install", target]
         if force { arguments.append("--force") }
         currentProcess = AgentRunner.run(arguments) { [weak self] output in
@@ -1387,7 +1387,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             if let result = AgentResult.parse(output) {
                 self.showResult(result)
             } else {
-                self.showError("agent 没有返回结果", detail: output)
+                self.showError(L10n.t("安装器没有返回结果", "The installer returned no result"), detail: output)
             }
         }
     }
@@ -1408,7 +1408,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             backing: .buffered,
             defer: false
         )
-        panel.title = "本地安装 agent"
+        panel.title = L10n.t("正在安装", "Installing")
         panel.isReleasedWhenClosed = false
         panel.level = .floating
 
@@ -1458,7 +1458,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             alert.addButton(withTitle: "好")
         } else {
             alert.messageText = "❌ \(result.error ?? result.message ?? "安装失败")"
-            alert.informativeText = result.releaseURL.map { "agent 没找到可直接安装的 macOS 包。\n可以打开发布页手动下载：\n\($0)" } ?? ""
+            alert.informativeText = result.releaseURL.map { L10n.t("安装器没找到可直接安装的 macOS 包。\n可以打开发布页手动下载：\n\($0)", "The installer couldn't find a directly installable macOS package.\nYou can open the release page to download manually:\n\($0)") } ?? ""
             alert.addButton(withTitle: "好")
             if currentInstallTarget != nil { alert.addButton(withTitle: "重试") }
             if result.releaseURL != nil { alert.addButton(withTitle: "打开发布页") }
