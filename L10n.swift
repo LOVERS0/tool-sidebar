@@ -34,7 +34,7 @@ enum L10n {
         "本地 Markdown · 沉浸写作": "Local Markdown · focused writing",
         "沉浸写作 / 大纲": "Focused writing / outlines",
         "设定集 / 人物卡 / 世界观": "Worldbuilding / characters / lore",
-        "小说工程 / 章节 / 情节线 · 需手动下载": "Novel projects / chapters / plotlines · manual download",
+        "小说工程 / 章节 / 情节线 · 需手动下载": "Novel projects / plotlines · manual download",
         "排版出 PDF / 样书 · 需手动下载": "Typeset PDF / proofs · manual download",
         "Markdown → 微信样式": "Markdown → WeChat styling",
         "Agent Skill · 需配合 agent": "Agent Skill · requires an agent",
