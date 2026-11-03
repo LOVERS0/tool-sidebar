@@ -236,7 +236,7 @@ final class TranslatorWindowController: NSWindowController {
     private let inputView = NSTextView()
     private let outputView = NSTextView()
     private let statusLabel = NSTextField(labelWithString: "")
-    private let direction = NSSegmentedControl(labels: ["英 → 中", "中 → 英"], trackingMode: .selectOne, target: nil, action: nil)
+    private let direction = NSSegmentedControl(labels: [L10n.t("英 → 中", "EN → ZH"), L10n.t("中 → 英", "ZH → EN")], trackingMode: .selectOne, target: nil, action: nil)
     private var toChinese = true
 
     init() {
@@ -246,7 +246,7 @@ final class TranslatorWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        panel.title = "中英翻译"
+        panel.title = L10n.t("中英翻译", "CN ↔ EN Translator")
         panel.isReleasedWhenClosed = false
         panel.level = .floating
         super.init(window: panel)
@@ -288,7 +288,7 @@ final class TranslatorWindowController: NSWindowController {
         direction.action = #selector(directionChanged)
         direction.autoresizingMask = [.maxXMargin]
 
-        let translateButton = NSButton(title: "翻译", target: self, action: #selector(translateAction))
+        let translateButton = NSButton(title: L10n.t("翻译", "Translate"), target: self, action: #selector(translateAction))
         translateButton.bezelStyle = .rounded
         translateButton.frame = NSRect(x: 184, y: 226, width: 80, height: 28)
 
@@ -297,7 +297,7 @@ final class TranslatorWindowController: NSWindowController {
         statusLabel.lineBreakMode = .byTruncatingTail
         statusLabel.frame = NSRect(x: 274, y: 230, width: 232, height: 18)
         statusLabel.autoresizingMask = [.width]
-        statusLabel.stringValue = "内置词库（可在 ⋯ 开启在线翻译）"
+        statusLabel.stringValue = L10n.t("内置词库（可在 ⋯ 开启在线翻译）", "Offline dictionary (online translation is opt-in via ⋯)")
 
         inputView.string = "Clipboard history manager for macOS"
 
@@ -311,10 +311,12 @@ final class TranslatorWindowController: NSWindowController {
     }
 
     @objc private func translateAction() {
-        statusLabel.stringValue = "翻译中…"
+        statusLabel.stringValue = L10n.t("翻译中…", "Translating…")
         Translator.translate(inputView.string, toChinese: toChinese) { [weak self] result, provider in
             self?.outputView.string = result
-            self?.statusLabel.stringValue = provider.rawValue
+            self?.statusLabel.stringValue = provider == .online
+                ? L10n.t("在线翻译（MyMemory）", "Online (MyMemory)")
+                : L10n.t("内置词库", "Offline dictionary")
         }
     }
 }
