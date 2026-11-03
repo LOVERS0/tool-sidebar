@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.9.2
+- Remove developer jargon from user-facing copy: “本地安装 agent” → “正在安装 / 安装助手”；“agent 没有返回结果” → “安装器没有返回结果”.
+- English UI: “Local install agent” → “Built-in installer”; “agent harness” → “AI workspace”.
+
 ## 1.9.1
 - Fix launch-at-login: LaunchAgent now launches via `/usr/bin/open -g -a` instead of pointing at the `.app` directory (which launchd couldn't execute).
 - Single-instance lock (flock) for normal GUI launch.
