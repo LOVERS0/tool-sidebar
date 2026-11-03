@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ToolSidebar · 小工具侧边栏</title>
+<meta name="description" content="macOS 悬浮小工具侧边栏：GitHub 搜索 / 下载 / 自检 / 安装 / 更新，一列管好写作、AI 和系统小工具。">
+<style>
+  :root {
+    --bg: #0f1115; --card: #171a21; --line: #262b36; --text: #e8ebf2;
+    --muted: #9aa3b2; --accent: #6ea8fe; --green: #34c759;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif; line-height: 1.65; }
+  a { color: var(--accent); text-decoration: none; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+  header { padding: 72px 0 44px; display: grid; grid-template-columns: 1.1fr .9fr; gap: 40px; align-items: center; }
+  @media (max-width: 820px) { header { grid-template-columns: 1fr; padding-top: 44px; } }
+  h1 { font-size: 44px; line-height: 1.15; margin: 0 0 10px; letter-spacing: -0.02em; }
+  .sub { color: var(--muted); font-size: 17px; margin: 0 0 24px; }
+  .badge { display: inline-flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; margin-bottom: 16px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+  .buttons { display: flex; flex-wrap: wrap; gap: 10px; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 10px; border: 1px solid var(--line); color: var(--text); background: var(--card); font-weight: 600; font-size: 14px; }
+  .btn.primary { background: var(--accent); color: #08101f; border-color: transparent; }
+  .btn:hover { transform: translateY(-1px); }
+  .shot { width: 100%; border-radius: 16px; border: 1px solid var(--line); box-shadow: 0 24px 60px rgba(0,0,0,.45); }
+  section { padding: 36px 0; border-top: 1px solid var(--line); }
+  h2 { font-size: 22px; margin: 0 0 18px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+  .card h3 { margin: 0 0 6px; font-size: 15px; }
+  .card p { margin: 0; color: var(--muted); font-size: 13px; }
+  code, pre { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 13px; }
+  pre { background: #0b0d12; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; overflow: auto; }
+  .note { color: var(--muted); font-size: 13px; }
+  .cmd { display: flex; gap: 8px; align-items: center; }
+  .cmd pre { flex: 1; margin: 0; }
+  .copy { background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+  footer { padding: 36px 0 56px; color: var(--muted); font-size: 13px; display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="badge"><span class="dot"></span> macOS 13+ · Universal · MIT</div>
+      <h1>小工具，<br>一列就好。</h1>
+      <p class="sub">把写作、AI、系统小工具收进一个悬浮侧边栏。<br>没装的工具，点一下由本地 agent 搜索 GitHub → 下载 → 自检 → 安装。</p>
+      <div class="buttons">
+        <a class="btn primary" href="https://github.com/LOVERS0/tool-sidebar/releases/latest">下载最新版</a>
+        <a class="btn" href="https://github.com/LOVERS0/tool-sidebar">GitHub 仓库</a>
+        <a class="btn" href="https://github.com/LOVERS0/tool-sidebar/issues">反馈问题</a>
+      </div>
+      <p class="note" style="margin-top:14px">未公证（ad-hoc 签名）：首次打开请右键 →「打开」，或执行 <code>xattr -dr com.apple.quarantine</code>。</p>
+    </div>
+    <img class="shot" src="screenshot.png" alt="ToolSidebar 截图">
+  </header>
+
+  <section>
+    <h2>为什么用它</h2>
+    <div class="grid">
+      <div class="card"><h3>本地 agent 安装</h3><p>查最新 GitHub Release、选 macOS 包、SHA-256 / 签名 / Gatekeeper 自检，不弹浏览器。</p></div>
+      <div class="card"><h3>一列管所有</h3><p>内置 26 个工具，分组 + 模糊搜索；绿点=已装，点一下启动。</p></div>
+      <div class="card"><h3>键盘优先</h3><p>↑↓ 选择、⏎ 打开/安装、⌘F 搜索、⌥⌘T 全局呼出。</p></div>
+      <div class="card"><h3>批量 / 迁移 / 分类</h3><p>一键装齐、导出配置换机、自定义分类与排序。</p></div>
+      <div class="card"><h3>悬浮球 + 开机自启</h3><p>收起成可拖动小球；静默开机只留菜单栏图标。</p></div>
+      <div class="card"><h3>自动更新</h3><p>Sparkle appcast + 原生兜底；更新/卸载都在右键里。</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>安装</h2>
+    <div class="cmd">
+      <pre>brew tap lovers0/tool-sidebar &amp;&amp; brew install --cask tool-sidebar</pre>
+      <button class="copy" onclick="navigator.clipboard.writeText('brew tap lovers0/tool-sidebar && brew install --cask tool-sidebar');this.textContent='已复制'">复制</button>
+    </div>
+    <p class="note">没有 Homebrew：从 <a href="https://github.com/LOVERS0/tool-sidebar/releases/latest">Releases</a> 下载 ToolSidebar.zip，解压拖进 /Applications。</p>
+  </section>
+
+  <section>
+    <h2>隐私</h2>
+    <p class="note">没有账号、没有遥测。只访问 GitHub API 获取 Release 信息；在线翻译默认关闭，开启时才发送要翻译的文本。</p>
+  </section>
+
+  <footer>
+    <span>© 2026 LOVERS0 · MIT</span>
+    <span><a href="https://github.com/LOVERS0/tool-sidebar">GitHub</a> · <a href="appcast.xml">appcast</a> · <a href="CHANGELOG.md">CHANGELOG</a></span>
+  </footer>
+</div>
+</body>
+</html>
