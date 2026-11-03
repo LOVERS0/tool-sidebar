@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.1
+- Fix launch-at-login: LaunchAgent now launches via `/usr/bin/open -g -a` instead of pointing at the `.app` directory (which launchd couldn't execute).
+- Single-instance lock (flock) for normal GUI launch.
+- Update checks now compare versions numerically: never offer an older release as an "update" (e.g. 1.9.1 → 1.9.0).
+- Shorter translator status text and English subtitle to avoid truncation.
+
 ## 1.9.0
 - Bilingual UI: English automatically on non-Chinese systems; tool names, subtitles, groups, menus, batch and translator are localized.
 - Localized bundle display name via `en.lproj` / `zh-Hans.lproj`.
