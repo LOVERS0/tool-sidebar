@@ -1,11 +1,27 @@
 # 小工具侧边栏（ToolSidebar）
 
-> GitHub 仓库：https://github.com/LOVERS0/tool-sidebar  
-> 下载：https://github.com/LOVERS0/tool-sidebar/releases
+[![Release](https://img.shields.io/github/v/release/LOVERS0/tool-sidebar?color=6ea8fe&label=release)](https://github.com/LOVERS0/tool-sidebar/releases)
+[![Platform](https://img.shields.io/badge/macOS-13%2B-black)](https://github.com/LOVERS0/tool-sidebar)
+[![License](https://img.shields.io/github/license/LOVERS0/tool-sidebar?color=green)](LICENSE)
+
+[English](README.en.md) · [官网](https://lovers0.github.io/tool-sidebar/) · [下载](https://github.com/LOVERS0/tool-sidebar/releases/latest) · [反馈](https://github.com/LOVERS0/tool-sidebar/issues)
 
 macOS 13+ 的悬浮小工具侧边栏 + 本地安装 agent：把写作 / AI / 系统小工具收进一列，点一下启动；没装的工具，点一下由本地 agent 自动搜索 GitHub → 下载 → 自检 → 安装 → 收录。
 
 ![侧边栏截图](screenshot.png)
+
+## 安装
+
+```bash
+brew tap lovers0/tool-sidebar
+brew install --cask tool-sidebar
+```
+
+或从 [Releases](https://github.com/LOVERS0/tool-sidebar/releases/latest) 下载 `ToolSidebar.zip`，解压拖进 `/Applications`。
+
+> 未公证（ad-hoc 签名），首次打开请右键 →「打开」，或执行 `xattr -dr com.apple.quarantine /Applications/ToolSidebar.app`。
+> Homebrew 被 Gatekeeper 拦时可加 `--no-quarantine`。
+
 
 收起后是悬浮球（可拖动）：
 
@@ -18,6 +34,8 @@ macOS 13+ 的悬浮小工具侧边栏 + 本地安装 agent：把写作 / AI / �
 ## 功能
 
 - **一列管所有工具**：内置 26 个（写作 / AI 开发 / 系统小工具），分组、模糊搜索、绿点=已装，点一下启动。
+- **键盘优先**：`↑↓` 在可见列表里上下选中（自动滚动跟随），`⏎` 打开 / 安装，`Esc` 先清空搜索、再收起侧边栏，`⌘F` 聚焦搜索框；鼠标点过的行会同步成选中行，输入法拼音选词时不抢回车。
+- **搜索空状态**：没有匹配时给提示，不只是一片空白。
 - **本地 agent 全自动安装**：查最新 Release → 选 macOS 包 → 下载 → 自检 → 装到 `~/Applications` → 写入「已收录」，全程不弹浏览器。
 - **自检**：
   - 与 GitHub API 提供的官方 `digest`（SHA-256）比对，不一致直接停止；
@@ -69,6 +87,7 @@ cd tool-sidebar
 
 - 点绿点行：启动对应 App（MarkItDown 行点击复制命令）。
 - 点灰点行：本地 agent 自动搜索 / 下载 / 自检 / 安装。
+- 键盘：`↑↓` 选中、`⏎` 打开 / 安装选中项、`⌘F` 聚焦搜索、`Esc` 清搜索 / 收起。
 - 顶栏 `+`：输入 `owner/repo`、GitHub 链接或搜索词，任意收录。
 - 右键行：更新、卸载、在 Finder 中显示。
 - 底部「开机自启」：勾选后下次登录静默启动。
