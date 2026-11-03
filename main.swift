@@ -14,6 +14,14 @@ if let index = cliArguments.firstIndex(of: "--translate"), index + 1 < cliArgume
     exit(0)
 }
 
+// 单实例：正常 GUI 启动时加 flock；--agent / --translate 不参与
+import Darwin
+let lockPath = NSTemporaryDirectory() + "com.a1.toolsidebar.lock"
+let lockFD = open(lockPath, O_CREAT | O_RDWR, 0o600)
+if lockFD >= 0, flock(lockFD, LOCK_EX | LOCK_NB) != 0 {
+    exit(0)
+}
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
