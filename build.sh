@@ -5,7 +5,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 APP="$HOME/Applications/小工具侧边栏.app"
 BUILD="$ROOT/build"
-VERSION="1.8.5"
+VERSION="${VERSION:-1.9.0}"
+SIGN_IDENTITY="${SIGN_IDENTITY:-}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 SDK="$(xcrun --show-sdk-path)"
 
 echo "== Sparkle 框架 =="
@@ -18,7 +20,7 @@ mkdir -p "$BUILD"
 echo "== 编译 arm64 =="
 xcrun swiftc -O -swift-version 5 \
   -target arm64-apple-macosx13.0 \
-  "$ROOT/main.swift" "$ROOT/ToolSidebar.swift" "$ROOT/Agent.swift" "$ROOT/Translator.swift" \
+  "$ROOT/main.swift" "$ROOT/ToolSidebar.swift" "$ROOT/Agent.swift" "$ROOT/Translator.swift" "$ROOT/L10n.swift" \
   -framework AppKit -framework Carbon -framework Sparkle \
   -F "$SPARKLE" -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
   -sdk "$SDK" \
@@ -27,7 +29,7 @@ xcrun swiftc -O -swift-version 5 \
 echo "== 编译 x86_64 =="
 xcrun swiftc -O -swift-version 5 \
   -target x86_64-apple-macosx13.0 \
-  "$ROOT/main.swift" "$ROOT/ToolSidebar.swift" "$ROOT/Agent.swift" "$ROOT/Translator.swift" \
+  "$ROOT/main.swift" "$ROOT/ToolSidebar.swift" "$ROOT/Agent.swift" "$ROOT/Translator.swift" "$ROOT/L10n.swift" \
   -framework AppKit -framework Carbon -framework Sparkle \
   -F "$SPARKLE" -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
   -sdk "$SDK" \
@@ -75,7 +77,32 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-codesign --force --deep --sign - "$APP" 2>/dev/null
+mkdir -p "$APP/Contents/Resources/en.lproj" "$APP/Contents/Resources/zh-Hans.lproj"
+cat > "$APP/Contents/Resources/en.lproj/InfoPlist.strings" <<'EOS'
+"CFBundleName" = "ToolSidebar";
+"CFBundleDisplayName" = "ToolSidebar";
+EOS
+cat > "$APP/Contents/Resources/zh-Hans.lproj/InfoPlist.strings" <<'EOS'
+"CFBundleName" = "小工具侧边栏";
+"CFBundleDisplayName" = "小工具侧边栏";
+EOS
+
+if [ -n "$SIGN_IDENTITY" ]; then
+  echo "== Developer ID 签名 =="
+  codesign --force --deep --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP"
+else
+  codesign --force --deep --sign - "$APP" 2>/dev/null
+fi
+
+if [ -n "$NOTARY_PROFILE" ]; then
+  echo "== 公证 =="
+  NOTARY_ZIP="$BUILD/ToolSidebar-notarize.zip"
+  ditto -c -k --keepParent "$APP" "$NOTARY_ZIP"
+  xcrun notarytool submit "$NOTARY_ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
+  xcrun stapler staple "$APP"
+  spctl -a -vvv -t install "$APP" || true
+fi
+
 xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
 
 echo "== 已安装 =="
