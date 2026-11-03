@@ -43,6 +43,7 @@ brew install --cask tool-sidebar
   - `spctl --assess` 公证 / Gatekeeper 评估，记录 Team ID。
 - **更新与卸载**：启动后自动检查已收录工具的版本，有更新会在行里提示；右键菜单可「更新 / 卸载（移到废纸篓）/ 在 Finder 中显示」。
 - **Sparkle 官方自动更新**：内嵌 Sparkle 2 + 官方 appcast（`appcast.xml`，EdDSA 签名），菜单里「检查更新…」或自动定时检查。
+- **中英双语界面**：系统语言不是中文时自动切英文，工具名、说明、分组、菜单一起英文化。
 - **中英翻译**：`⋯` → 中英翻译…；默认离线内置词库，需要时可显式开启「在线翻译（MyMemory）」。真正专业的翻译/OCR 推荐用精选里的 **Easydict** 或 **Pot**。
 
 - **远程精选源**：从仓库里的 `featured.json` 拉取「精选」工具，按需收录，不用重新发版。
@@ -142,6 +143,11 @@ build.sh                 # universal 构建 + 打包
 assets/AppIcon.icns      # App 图标
 .github/workflows/       # GitHub Actions
 ```
+
+## 发布与公证
+
+- 发布自动化：`./scripts/release.sh 1.9.0`（构建 → 签名 → tag → 等 CI → 上传 → appcast → cask），见 [RELEASE.md](RELEASE.md)。
+- Apple 公证（需要 $99/年开发者账号）：见 [NOTARIZATION.md](NOTARIZATION.md)。未公证时首次打开要右键 →「打开」。
 
 ## License
 
