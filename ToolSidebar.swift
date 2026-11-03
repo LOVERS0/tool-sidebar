@@ -1,6 +1,7 @@
 import AppKit
 import Carbon
 import Sparkle
+import UniformTypeIdentifiers
 
 // MARK: - 数据模型
 
@@ -313,6 +314,14 @@ final class ToolRowView: NSView {
     var updateVersion: String?
     private let background = NSView()
     private var tracking: NSTrackingArea?
+    private var isSelectedRow = false
+
+    func setSelected(_ selected: Bool) {
+        isSelectedRow = selected
+        background.layer?.backgroundColor = selected
+            ? NSColor.controlAccentColor.withAlphaComponent(0.16).cgColor
+            : NSColor.clear.cgColor
+    }
 
     init(tool: Tool) {
         self.tool = tool
@@ -401,10 +410,12 @@ final class ToolRowView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
+        guard !isSelectedRow else { return }
         background.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.07).cgColor
     }
 
     override func mouseExited(with event: NSEvent) {
+        guard !isSelectedRow else { return }
         background.layer?.backgroundColor = NSColor.clear.cgColor
     }
 
@@ -497,7 +508,11 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     private var batchIndex = 0
     private var batchSucceeded = 0
     private var batchFailed: [String] = []
+    private var batchSkipped: [String] = []
     private var batchCancelled = false
+    private var visibleRows: [ToolRowView] = []
+    private var selectedIndex: Int?
+    private var keyMonitor: Any?
 
     private var allTools: [Tool] {
         var byRepo: [String: Tool] = [:]
@@ -596,7 +611,14 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         buildSearch()
         buildScroll()
         buildFooter()
+        installKeyMonitor()
         rebuild()
+    }
+
+    deinit {
+        if let monitor = keyMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
     }
 
     private func buildHeader() {
@@ -716,8 +738,8 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         dot.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(dot)
 
-        let hint = NSTextField(labelWithString: "绿点=已装，点击启动")
-        hint.font = .systemFont(ofSize: 9.5)
+        let hint = NSTextField(labelWithString: "↑↓ 选择 · ⏎ 打开 · esc 收起")
+        hint.font = .systemFont(ofSize: 9)
         hint.textColor = .secondaryLabelColor
         hint.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(hint)
@@ -974,9 +996,93 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         rebuild()
     }
 
+    // MARK: 键盘操作
+
+    private func installKeyMonitor() {
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self,
+                  let window = self.view.window,
+                  window.isKeyWindow else { return event }
+            return self.handleKeyDown(event)
+        }
+    }
+
+    private func handleKeyDown(_ event: NSEvent) -> NSEvent? {
+        // 输入法正在拼写时，把按键让给输入法（否则拼音选词的回车会被当成「打开」）
+        if let editor = view.window?.firstResponder as? NSTextView, editor.hasMarkedText() {
+            return event
+        }
+        let mods = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        // ⌘F 聚焦搜索
+        if mods == .command, (event.charactersIgnoringModifiers ?? "").lowercased() == "f" {
+            view.window?.makeFirstResponder(searchField)
+            searchField.selectText(nil)
+            return nil
+        }
+        guard mods.isEmpty else { return event }
+        switch event.keyCode {
+        case 125: // ↓
+            moveSelection(1)
+            return nil
+        case 126: // ↑
+            moveSelection(-1)
+            return nil
+        case 36, 76: // Return / 小键盘 Enter
+            activateSelection()
+            return nil
+        case 53: // Esc：先清搜索，再收起
+            dismiss()
+            return nil
+        default:
+            return event
+        }
+    }
+
+    private func moveSelection(_ delta: Int) {
+        guard !visibleRows.isEmpty else { return }
+        let start = selectedIndex ?? (delta > 0 ? -1 : visibleRows.count)
+        let index = max(0, min(visibleRows.count - 1, start + delta))
+        selectRow(at: index)
+    }
+
+    private func selectRow(at index: Int) {
+        guard visibleRows.indices.contains(index) else { return }
+        for (i, row) in visibleRows.enumerated() {
+            row.setSelected(i == index)
+        }
+        selectedIndex = index
+        let row = visibleRows[index]
+        row.scrollToVisible(row.bounds.insetBy(dx: 0, dy: -8))
+    }
+
+    private func activateSelection() {
+        guard !visibleRows.isEmpty else { return }
+        let index = selectedIndex ?? 0
+        guard visibleRows.indices.contains(index) else { return }
+        selectRow(at: index)
+        handle(visibleRows[index].tool)
+    }
+
+    private func dismiss() {
+        if !searchField.stringValue.isEmpty {
+            searchField.stringValue = ""
+            query = ""
+            rebuild()
+            return
+        }
+        if let delegate = NSApp.delegate as? AppDelegate {
+            delegate.hideSidebar()
+        } else {
+            view.window?.orderOut(nil)
+        }
+    }
+
     // MARK: 行点击 / 本地 agent
 
     private func handle(_ tool: Tool) {
+        if let index = visibleRows.firstIndex(where: { $0.tool.id == tool.id }) {
+            selectRow(at: index)
+        }
         if isInstalled(tool) || tool.command != nil {
             launchTool(tool)
             return
@@ -1034,6 +1140,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         add("中英翻译…", #selector(showTranslatorWindow))
         add(Translator.onlineEnabled ? "关闭在线翻译（MyMemory）" : "开启在线翻译（MyMemory）", #selector(toggleOnlineTranslation))
         add("打开辅助功能设置…", #selector(openAccessibilitySettings))
+        add("GitHub 仓库 / 反馈…", #selector(openGitHubRepo))
         menu.addItem(NSMenuItem.separator())
         add("导出配置…", #selector(exportConfig))
         add("导入配置…", #selector(importConfig))
@@ -1058,6 +1165,12 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         (NSApp.delegate as? AppDelegate)?.showTranslator()
     }
 
+    @objc private func openGitHubRepo() {
+        if let url = URL(string: "https://github.com/LOVERS0/tool-sidebar") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     @objc private func openAccessibilitySettings() {
         (NSApp.delegate as? AppDelegate)?.openAccessibilitySettings()
     }
@@ -1067,17 +1180,28 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     }
 
     @objc private func batchInstall() {
-        let targets = allTools.filter { !isInstalled($0) && $0.repo != nil }
+        let pending = allTools.filter { !isInstalled($0) && $0.repo != nil }
+        let manualTargets = pending.filter { $0.manual }
+        let targets = pending.filter { !$0.manual }
         guard !targets.isEmpty else {
-            showError("没有待安装的工具", detail: "所有带 GitHub 仓库的工具都已经安装。")
+            if manualTargets.isEmpty {
+                showError("没有待安装的工具", detail: "所有带 GitHub 仓库的工具都已经安装。")
+            } else {
+                showError("剩下的都需要手动下载", detail: "需手动下载：" + manualTargets.map { $0.name }.joined(separator: "、"))
+            }
             return
         }
         let alert = NSAlert()
         alert.messageText = "批量安装 \(targets.count) 个工具？"
-        alert.informativeText = "会按顺序下载、自检、安装，耗时取决于网速，过程中可以取消。"
+        var detail = "会按顺序下载、自检、安装，耗时取决于网速，过程中可以取消。"
+        if !manualTargets.isEmpty {
+            detail += "\n\n将跳过 \(manualTargets.count) 个需手动下载的：" + manualTargets.map { $0.name }.joined(separator: "、")
+        }
+        alert.informativeText = detail
         alert.addButton(withTitle: "开始")
         alert.addButton(withTitle: "取消")
         if alert.runModal() == .alertFirstButtonReturn {
+            batchSkipped = manualTargets.map { $0.name }
             startBatch(targets)
         }
     }
@@ -1088,6 +1212,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         batchIndex = 0
         batchSucceeded = 0
         batchFailed = []
+        batchSkipped = []
         batchCancelled = false
         runNextBatch()
     }
@@ -1117,6 +1242,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     private func finishBatch() {
         let total = batchQueue.count
         let failed = batchFailed
+        let skipped = batchSkipped
         batchQueue = []
         batchIndex = 0
         catalogTools = loadCatalogTools()
@@ -1129,6 +1255,9 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             lines.append(contentsOf: failed.prefix(5))
             if failed.count > 5 { lines.append("…") }
         }
+        if !skipped.isEmpty {
+            lines.append("跳过 \(skipped.count) 个需手动下载：" + skipped.prefix(4).joined(separator: "、"))
+        }
         alert.informativeText = lines.joined(separator: "\n")
         alert.addButton(withTitle: "好")
         present(alert, result: nil)
@@ -1138,7 +1267,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         let panel = NSSavePanel()
         panel.title = "导出配置"
         panel.nameFieldStringValue = "tool-sidebar-migration.json"
-        panel.allowedFileTypes = ["json"]
+        panel.allowedContentTypes = [.json]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         var seen = Set<String>()
         var tools: [MigrationTool] = []
@@ -1160,7 +1289,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     @objc private func importConfig() {
         let panel = NSOpenPanel()
         panel.title = "导入配置"
-        panel.allowedFileTypes = ["json"]
+        panel.allowedContentTypes = [.json]
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard let data = try? Data(contentsOf: url),
@@ -1359,10 +1488,15 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     }
 
     private func rebuild() {
+        let previousId: String? = {
+            guard let index = selectedIndex, visibleRows.indices.contains(index) else { return nil }
+            return visibleRows[index].tool.id
+        }()
         for subview in stack.arrangedSubviews {
             stack.removeArrangedSubview(subview)
             subview.removeFromSuperview()
         }
+        visibleRows = []
 
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         var isFirstGroup = true
@@ -1426,13 +1560,63 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
                 }
                 stack.addArrangedSubview(row)
                 row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+                visibleRows.append(row)
             }
 
             isFirstGroup = false
         }
 
+        if visibleRows.isEmpty && !q.isEmpty {
+            addEmptyState(query: q)
+        }
+
+        if let previousId = previousId,
+           let index = visibleRows.firstIndex(where: { $0.tool.id == previousId }) {
+            selectRowSilently(at: index)
+        } else {
+            for row in visibleRows { row.setSelected(false) }
+            selectedIndex = nil
+        }
+
         let installed = allTools.filter { isInstalled($0) }.count
         countLabel.stringValue = "\(installed) / \(allTools.count) 已装"
+    }
+
+    private func addEmptyState(query: String) {
+        let wrapper = NSView()
+        wrapper.translatesAutoresizingMaskIntoConstraints = false
+
+        let title = NSTextField(labelWithString: "没有匹配「\(query)」的工具")
+        title.font = .systemFont(ofSize: 12)
+        title.textColor = .secondaryLabelColor
+        title.alignment = .center
+        title.translatesAutoresizingMaskIntoConstraints = false
+
+        let hint = NSTextField(labelWithString: "试试更短的关键词，或用 + 从 GitHub 收录")
+        hint.font = .systemFont(ofSize: 10)
+        hint.textColor = .tertiaryLabelColor
+        hint.alignment = .center
+        hint.translatesAutoresizingMaskIntoConstraints = false
+
+        wrapper.addSubview(title)
+        wrapper.addSubview(hint)
+        NSLayoutConstraint.activate([
+            wrapper.heightAnchor.constraint(equalToConstant: 96),
+            title.topAnchor.constraint(equalTo: wrapper.topAnchor, constant: 28),
+            title.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor, constant: 12),
+            title.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -12),
+            hint.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 6),
+            hint.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor, constant: 12),
+            hint.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -12)
+        ])
+        stack.addArrangedSubview(wrapper)
+        wrapper.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+    }
+
+    private func selectRowSilently(at index: Int) {
+        guard visibleRows.indices.contains(index) else { return }
+        for (i, row) in visibleRows.enumerated() { row.setSelected(i == index) }
+        selectedIndex = index
     }
 }
 
