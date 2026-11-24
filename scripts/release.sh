@@ -10,7 +10,7 @@ if [ -z "$VERSION" ]; then
 fi
 TAG="v$VERSION"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP="$HOME/Applications/小工具侧边栏.app"
+APP="$ROOT/build/小工具侧边栏.app"
 REPO="LOVERS0/tool-sidebar"
 TAP_DIR="$HOME/Documents/homebrew-tool-sidebar"
 cd "$ROOT"

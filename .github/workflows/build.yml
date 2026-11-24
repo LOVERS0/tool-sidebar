@@ -23,11 +23,14 @@ jobs:
       - name: Build universal app
         run: ./build.sh
 
+      - name: Regression checks
+        run: ./scripts/test.sh
+
       - name: Verify architectures
-        run: lipo -info "$HOME/Applications/小工具侧边栏.app/Contents/MacOS/ToolSidebar"
+        run: lipo -info "build/小工具侧边栏.app/Contents/MacOS/ToolSidebar"
 
       - name: Package
-        run: ditto -c -k --keepParent "$HOME/Applications/小工具侧边栏.app" ToolSidebar.zip
+        run: ditto -c -k --keepParent "build/小工具侧边栏.app" ToolSidebar.zip
 
       - uses: actions/upload-artifact@v4
         with:

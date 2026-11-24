@@ -3,9 +3,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-APP="$HOME/Applications/小工具侧边栏.app"
 BUILD="$ROOT/build"
-VERSION="${VERSION:-1.9.2}"
+APP="${APP_PATH:-$BUILD/小工具侧边栏.app}"
+[[ "$APP" == /*.app ]] || { echo "APP_PATH 必须是绝对 .app 路径" >&2; exit 1; }
+VERSION="${VERSION:-1.10.0}"
 SIGN_IDENTITY="${SIGN_IDENTITY:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 SDK="$(xcrun --show-sdk-path)"
@@ -18,7 +19,7 @@ rm -rf "$BUILD"
 mkdir -p "$BUILD"
 
 echo "== 编译 arm64 =="
-xcrun swiftc -O -swift-version 5 \
+xcrun swiftc -O -swift-version 5 -module-cache-path "$BUILD/module-cache" \
   -target arm64-apple-macosx13.0 \
   "$ROOT/main.swift" "$ROOT/ToolSidebar.swift" "$ROOT/Agent.swift" "$ROOT/Translator.swift" "$ROOT/L10n.swift" \
   -framework AppKit -framework Carbon -framework Sparkle \
@@ -27,7 +28,7 @@ xcrun swiftc -O -swift-version 5 \
   -o "$BUILD/ToolSidebar-arm64"
 
 echo "== 编译 x86_64 =="
-xcrun swiftc -O -swift-version 5 \
+xcrun swiftc -O -swift-version 5 -module-cache-path "$BUILD/module-cache" \
   -target x86_64-apple-macosx13.0 \
   "$ROOT/main.swift" "$ROOT/ToolSidebar.swift" "$ROOT/Agent.swift" "$ROOT/Translator.swift" "$ROOT/L10n.swift" \
   -framework AppKit -framework Carbon -framework Sparkle \
@@ -103,7 +104,6 @@ if [ -n "$NOTARY_PROFILE" ]; then
   spctl -a -vvv -t install "$APP" || true
 fi
 
-xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
 
-echo "== 已安装 =="
+echo "== 构建完成 =="
 echo "$APP  (v$VERSION)"

@@ -3,3 +3,5 @@ build/
 *.dmg
 *.zip
 *.tar.gz
+
+vendor/

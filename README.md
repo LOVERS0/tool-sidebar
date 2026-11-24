@@ -8,6 +8,8 @@
 
 macOS 13+ 的悬浮小工具侧边栏 + 自动安装助手：把写作 / AI / 系统小工具收进一列，点一下启动；没装的工具，点一下由安装助手自动搜索 GitHub → 下载 → 自检 → 安装 → 收录。
 
+> **1.10.0 开发中（第一阶段）**：已加入列表筛选、收藏、明确的行操作，以及搜索与安装稳定性改进。尚未正式发布；下图为旧版界面。
+
 ![侧边栏截图](screenshot.png)
 
 ## 安装
@@ -33,14 +35,14 @@ brew install --cask tool-sidebar
 
 ## 功能
 
-- **一列管所有工具**：内置 26 个（写作 / AI 开发 / 系统小工具），分组、模糊搜索、绿点=已装，点一下启动。
+- **一列管所有工具**：内置 26 个（写作 / AI 开发 / 系统小工具），分组、模糊搜索，支持全部 / 已安装 / 收藏筛选，行右侧显示打开、安装、更新等操作。
 - **键盘优先**：`↑↓` 在可见列表里上下选中（自动滚动跟随），`⏎` 打开 / 安装，`Esc` 先清空搜索、再收起侧边栏，`⌘F` 聚焦搜索框；鼠标点过的行会同步成选中行，输入法拼音选词时不抢回车。
 - **搜索空状态**：没有匹配时给提示，不只是一片空白。
 - **安装助手全自动安装**：查最新 Release → 选 macOS 包 → 下载 → 自检 → 装到 `~/Applications` → 写入「已收录」，全程不弹浏览器。
 - **自检**：
   - 与 GitHub API 提供的官方 `digest`（SHA-256）比对，不一致直接停止；
   - `codesign --verify --deep --strict` 签名校验，不通过不安装；
-  - `spctl --assess` 公证 / Gatekeeper 评估，记录 Team ID。
+  - `spctl --assess` Gatekeeper 评估，不通过停止自动安装，并记录 Team ID。
 - **更新与卸载**：启动后自动检查已收录工具的版本，有更新会在行里提示；右键菜单可「更新 / 卸载（移到废纸篓）/ 在 Finder 中显示」。
 - **Sparkle 官方自动更新**：内嵌 Sparkle 2 + 官方 appcast（`appcast.xml`，EdDSA 签名），菜单里「检查更新…」或自动定时检查。
 - **中英双语界面**：系统语言不是中文时自动切英文，工具名、说明、分组、菜单一起英文化。
@@ -51,7 +53,7 @@ brew install --cask tool-sidebar
 - **安装后保持中文**：已收录工具继续显示中文名称/说明（附版本号），不会变成 `owner/repo` 英文行；精选工具安装后不会重复出现在「已收录」。
 - **批量安装**：`⋯` 菜单里可一键安装所有未安装工具，带进度和失败原因；已登录 `gh` 时自动使用其 Token，避免 GitHub API 限额。
 - **换机迁移**：导出/导入配置（已装工具列表 + 重命名/分类/排序 + 开机自启），导入后自动批量安装。
-- **开机自启**：底部勾选写入 `~/Library/LaunchAgents`，以 `--silent` 静默启动（不弹窗，只留菜单栏图标）。
+- **开机自启**：在 `⋯` 菜单勾选写入 `~/Library/LaunchAgents`，以 `--silent` 静默启动（不弹窗，只留菜单栏图标）。
 - **收起成悬浮球**：关掉侧边栏后变成一个小球，可拖动；点球展开。静默开机启动时也只显示球。
 - **全局快捷键 ⌥⌘T**：随时呼出/隐藏侧边栏。
 - **打不开的工具**：有现成安装包的自动装；没有的（如 Typst、novelWriter）会提示并可直接打开发布页，不再卡住。
@@ -81,17 +83,19 @@ brew install --cask tool-sidebar
 ```bash
 cd tool-sidebar
 ./build.sh
-# 产物：~/Applications/小工具侧边栏.app（universal，v1.4.0）
+# 产物：build/小工具侧边栏.app（universal）
+./scripts/test.sh  # 架构选择、可靠替换、设置兼容及列表回归检查
 ```
 
 ## 使用
 
-- 点绿点行：启动对应 App（MarkItDown 行点击复制命令）。
-- 点灰点行：安装助手自动搜索 / 下载 / 自检 / 安装。
+- 点「打开」启动对应 App；MarkItDown 行点击「复制」复制命令。
+- 点「安装」下载、自检并安装；网页和手动下载工具分别显示「访问」「下载」。
+- 搜索框下方切换「全部 / 已安装 / 收藏」；右键行可收藏，收藏项在各分类中优先显示。
 - 键盘：`↑↓` 选中、`⏎` 打开 / 安装选中项、`⌘F` 聚焦搜索、`Esc` 清搜索 / 收起。
 - 顶栏 `+`：输入 `owner/repo`、GitHub 链接或搜索词，任意收录。
 - 右键行：更新、卸载、在 Finder 中显示。
-- 底部「开机自启」：勾选后下次登录静默启动。
+- `⋯` →「开机自启」：勾选后下次登录静默启动。
 
 ### 命令行 / 自动化
 
@@ -107,7 +111,7 @@ APP="$HOME/Applications/小工具侧边栏.app/Contents/MacOS/ToolSidebar"
 "$APP" --agent remove owner/repo
 "$APP" --agent autostart status|on|off
 "$APP" --agent app-update-check         # 检查 App 自身更新
-"$APP" --agent app-update               # 下载并解压新版本
+"$APP" --agent app-update               # 已停用直接替换；请在应用菜单使用 Sparkle 更新
 ```
 
 ## 目录与数据
@@ -119,7 +123,7 @@ APP="$HOME/Applications/小工具侧边栏.app/Contents/MacOS/ToolSidebar"
 
 ## 安全说明
 
-- 只安装 `codesign` 校验通过的 `.app`；签名失败立即停止。
+- 自动安装要求 `codesign` 和 macOS Gatekeeper 评估均通过，失败会停止并提供官方发布页；保留隔离标记。
 - 下载文件的 SHA-256 会写入目录 JSON，便于事后核对；官方提供 digest 时强制比对。
 - 直连 GitHub 失败时自动改用 `ghproxy.net` 镜像下载，但仍以官方 digest 校验为准。
 - 不自带提权，不静默改系统设置；开机自启用用户级 LaunchAgent。

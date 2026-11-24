@@ -18,6 +18,7 @@ struct Tool {
     var source: String = "builtin"
     var manual: Bool = false
     var version: String? = nil
+    var bundleID: String? = nil
 }
 
 struct CatalogTool: Codable {
@@ -31,6 +32,7 @@ struct CatalogTool: Codable {
     let version: String?
     let sha256: String?
     let installedAt: String?
+    let bundleID: String?
 }
 
 struct CatalogFile: Codable {
@@ -56,6 +58,18 @@ struct Overrides: Codable {
     var orders: [String: [String]] = [:]
     var categories: [String: String] = [:]
     var customCategories: [String] = []
+    var favorites: [String] = []
+
+    init() {}
+    enum CodingKeys: String, CodingKey { case names, orders, categories, customCategories, favorites }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        names = try values.decodeIfPresent([String: String].self, forKey: .names) ?? [:]
+        orders = try values.decodeIfPresent([String: [String]].self, forKey: .orders) ?? [:]
+        categories = try values.decodeIfPresent([String: String].self, forKey: .categories) ?? [:]
+        customCategories = try values.decodeIfPresent([String].self, forKey: .customCategories) ?? []
+        favorites = try values.decodeIfPresent([String].self, forKey: .favorites) ?? []
+    }
 }
 
 struct MigrationTool: Codable {
@@ -76,8 +90,48 @@ func expandedPath(_ path: String) -> String {
 }
 
 func isInstalled(_ tool: Tool) -> Bool {
-    guard let p = tool.path else { return false }
-    return FileManager.default.fileExists(atPath: expandedPath(p))
+    InstalledApplications.url(for: tool) != nil
+}
+
+/// One scan per model refresh, shared by row state, launching and batch installs.
+enum InstalledApplications {
+    private static var byName: [String: URL] = [:]
+    private static var byBundleID: [String: URL] = [:]
+
+    static func refresh(directories: [URL] = [URL(fileURLWithPath: NSHomeDirectory() + "/Applications"),
+                                             URL(fileURLWithPath: "/Applications")]) {
+        byName = [:]
+        byBundleID = [:]
+        for directory in directories {
+            let apps = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+            for app in apps where app.pathExtension == "app" {
+                let bundle = Bundle(url: app)
+                var names = [app.deletingPathExtension().lastPathComponent]
+                for key in ["CFBundleName", "CFBundleDisplayName"] {
+                    if let name = bundle?.object(forInfoDictionaryKey: key) as? String { names.append(name) }
+                }
+                for name in names where byName[name.lowercased()] == nil { byName[name.lowercased()] = app }
+                if let id = bundle?.bundleIdentifier, byBundleID[id] == nil { byBundleID[id] = app }
+            }
+        }
+    }
+
+    static func url(for tool: Tool) -> URL? {
+        if let path = tool.path, FileManager.default.fileExists(atPath: expandedPath(path)) {
+            return URL(fileURLWithPath: expandedPath(path))
+        }
+        if let id = tool.bundleID, !id.isEmpty {
+            if let app = byBundleID[id] { return app }
+            if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) { return app }
+        }
+        var names = [tool.name]
+        if let path = tool.path { names.append(URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent) }
+        if let repo = tool.repo { names.append(String(repo.split(separator: "/").last ?? "")) }
+        for name in names {
+            if let app = byName[name.lowercased()], FileManager.default.fileExists(atPath: app.path) { return app }
+        }
+        return nil
+    }
 }
 
 let catalogPath: String = (("~/Library/Application Support/小工具侧边栏/catalog.json") as NSString).expandingTildeInPath
@@ -101,7 +155,8 @@ func loadCatalogTools() -> [Tool] {
             path: item.path,
             repo: item.repo,
             source: "catalog",
-            version: item.version
+            version: item.version,
+            bundleID: item.bundleID
         )
     }
 }
@@ -116,7 +171,9 @@ func loadOverrides() -> Overrides {
 
 func saveOverrides(_ value: Overrides) {
     guard let data = try? JSONEncoder().encode(value) else { return }
-    try? data.write(to: URL(fileURLWithPath: overridesPath))
+    let url = URL(fileURLWithPath: overridesPath)
+    try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try? data.write(to: url, options: .atomic)
 }
 
 func loadFeaturedCache() -> [Tool] {
@@ -180,17 +237,6 @@ enum Toolbox {
 
 // MARK: - 启动 / 本地 agent
 
-func findInstalledApp(named name: String) -> URL? {
-    let fm = FileManager.default
-    for base in ["/Applications", NSHomeDirectory() + "/Applications"] {
-        let path = base + "/" + name + ".app"
-        if fm.fileExists(atPath: path) {
-            return URL(fileURLWithPath: path)
-        }
-    }
-    return nil
-}
-
 func launchTool(_ tool: Tool) {
     if let cmd = tool.command {
         NSPasteboard.general.clearContents()
@@ -201,21 +247,14 @@ func launchTool(_ tool: Tool) {
         }
         return
     }
-    if let p = tool.path {
-        let path = expandedPath(p)
-        if FileManager.default.fileExists(atPath: path) {
-            NSWorkspace.shared.openApplication(
-                at: URL(fileURLWithPath: path),
-                configuration: NSWorkspace.OpenConfiguration()
-            ) { _, error in
-                guard let error = error else { return }
-                let work = DispatchWorkItem {
-                    (NSApp.delegate as? AppDelegate)?.showLaunchError(appName: tool.name, detail: error.localizedDescription)
-                }
-                DispatchQueue.main.async(execute: work)
+    if let app = InstalledApplications.url(for: tool) {
+        NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration()) { _, error in
+            guard let error = error else { return }
+            DispatchQueue.main.async {
+                (NSApp.delegate as? AppDelegate)?.showLaunchError(appName: tool.name, detail: error.localizedDescription)
             }
-            return
         }
+        return
     }
     if let s = tool.url, let url = URL(string: s) {
         NSWorkspace.shared.open(url)
@@ -234,7 +273,8 @@ enum AgentRunner {
         process.arguments = ["--agent"] + arguments
         let output = Pipe()
         process.standardOutput = output
-        process.standardError = Pipe()
+        // Merge stderr so it is drained together with stdout.
+        process.standardError = output
         do {
             try process.run()
         } catch {
@@ -249,6 +289,9 @@ enum AgentRunner {
                 DispatchQueue.main.async(execute: done)
             }
             DispatchQueue.global().async(execute: work)
+        }
+        if completion == nil {
+            DispatchQueue.global().async { _ = output.fileHandleForReading.readDataToEndOfFile() }
         }
         return process
     }
@@ -300,6 +343,7 @@ final class FlippedView: NSView {
 
 final class ToolRowView: NSView {
     let tool: Tool
+    let installedSnapshot: Bool
     var onClick: (() -> Void)?
     var onInstall: (() -> Void)?
     var onUpdate: (() -> Void)?
@@ -310,6 +354,8 @@ final class ToolRowView: NSView {
     var onMoveDown: (() -> Void)?
     var onAssignCategory: ((String?) -> Void)?
     var onNewCategory: (() -> Void)?
+    var onToggleFavorite: (() -> Void)?
+    var isFavorite = false
     var categories: [String] = []
     var updateVersion: String?
     private let background = NSView()
@@ -323,8 +369,11 @@ final class ToolRowView: NSView {
             : NSColor.clear.cgColor
     }
 
-    init(tool: Tool) {
+    init(tool: Tool, updateVersion: String? = nil, isFavorite: Bool = false) {
         self.tool = tool
+        self.installedSnapshot = isInstalled(tool)
+        self.updateVersion = updateVersion
+        self.isFavorite = isFavorite
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         wantsLayer = true
@@ -334,7 +383,7 @@ final class ToolRowView: NSView {
         background.translatesAutoresizingMaskIntoConstraints = false
         addSubview(background)
 
-        let installed = isInstalled(tool)
+        let installed = installedSnapshot
 
         let icon = NSImageView()
         icon.translatesAutoresizingMaskIntoConstraints = false
@@ -352,7 +401,7 @@ final class ToolRowView: NSView {
         title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let subtitle = NSTextField(labelWithString: tool.subtitle)
-        subtitle.font = .systemFont(ofSize: 10.5)
+        subtitle.font = .systemFont(ofSize: 11)
         subtitle.textColor = .secondaryLabelColor
         subtitle.lineBreakMode = .byTruncatingTail
         subtitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -364,12 +413,24 @@ final class ToolRowView: NSView {
         text.translatesAutoresizingMaskIntoConstraints = false
         addSubview(text)
 
-        let dot = NSView()
-        dot.wantsLayer = true
-        dot.layer?.cornerRadius = 3
-        dot.layer?.backgroundColor = (installed ? NSColor.systemGreen : NSColor.secondaryLabelColor.withAlphaComponent(0.3)).cgColor
-        dot.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(dot)
+        let actionTitle: String
+        if installed && updateVersion != nil { actionTitle = L10n.t("更新", "Update") }
+        else if installed { actionTitle = L10n.t("打开", "Open") }
+        else if tool.command != nil { actionTitle = L10n.t("复制", "Copy") }
+        else if tool.manual { actionTitle = L10n.t("下载", "Get") }
+        else if tool.repo != nil { actionTitle = L10n.t("安装", "Install") }
+        else if tool.url != nil { actionTitle = L10n.t("访问", "Visit") }
+        else { actionTitle = L10n.t("查找", "Find") }
+        let action = NSButton(title: actionTitle, target: self, action: #selector(primaryAction))
+        action.isBordered = false
+        action.font = .systemFont(ofSize: 11, weight: .medium)
+        action.contentTintColor = .controlAccentColor
+        action.translatesAutoresizingMaskIntoConstraints = false
+        action.setAccessibilityLabel("\(actionTitle) \(tool.name)")
+        addSubview(action)
+        toolTip = tool.name + "\n" + tool.subtitle
+        setAccessibilityRole(.group)
+        setAccessibilityLabel(tool.name)
 
         NSLayoutConstraint.activate([
             background.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -384,14 +445,14 @@ final class ToolRowView: NSView {
 
             text.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 10),
             text.centerYAnchor.constraint(equalTo: centerYAnchor),
-            text.trailingAnchor.constraint(lessThanOrEqualTo: dot.leadingAnchor, constant: -8),
+            text.trailingAnchor.constraint(equalTo: action.leadingAnchor, constant: -8),
 
-            dot.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            dot.centerYAnchor.constraint(equalTo: centerYAnchor),
-            dot.widthAnchor.constraint(equalToConstant: 6),
-            dot.heightAnchor.constraint(equalToConstant: 6),
+            action.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            action.centerYAnchor.constraint(equalTo: centerYAnchor),
+            action.widthAnchor.constraint(equalToConstant: 46),
+            action.heightAnchor.constraint(equalToConstant: 28),
 
-            heightAnchor.constraint(equalToConstant: 42)
+            heightAnchor.constraint(equalToConstant: 46)
         ])
     }
 
@@ -434,6 +495,8 @@ final class ToolRowView: NSView {
             item.target = self
             menu.addItem(item)
         }
+        add(isFavorite ? L10n.t("取消收藏", "Remove favorite") : L10n.t("收藏", "Add favorite"), #selector(toggleFavoriteAction))
+        menu.addItem(.separator())
         if isInstalled(tool) {
             add(L10n.t("打开", "Open"), #selector(openAction))
             if tool.path != nil { add(L10n.t("在 Finder 中显示", "Show in Finder"), #selector(revealAction)) }
@@ -460,6 +523,8 @@ final class ToolRowView: NSView {
             let categoryItem = NSMenuItem(title: "分类", action: nil, keyEquivalent: "")
             categoryItem.submenu = categoryMenu
             menu.addItem(categoryItem)
+        } else if tool.manual {
+            add(L10n.t("前往官方下载", "Open official download"), #selector(webAction))
         } else if tool.repo != nil {
             add(L10n.t("安装", "Install"), #selector(installAction))
         } else if tool.url != nil {
@@ -469,6 +534,11 @@ final class ToolRowView: NSView {
     }
 
     @objc private func openAction() { onClick?() }
+    @objc private func toggleFavoriteAction() { onToggleFavorite?() }
+    @objc private func primaryAction() {
+        if updateVersion != nil && isInstalled(tool) { onUpdate?() }
+        else { onClick?() }
+    }
     @objc private func installAction() { onInstall?() }
     @objc private func updateAction() { onUpdate?() }
     @objc private func uninstallAction() { onUninstall?() }
@@ -492,18 +562,20 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     private let stack = NSStackView()
     private let searchField = NSSearchField()
     private let countLabel = NSTextField(labelWithString: "")
+    private let filterControl = NSSegmentedControl(labels: [L10n.t("全部", "All"), L10n.t("已安装", "Installed"), L10n.t("收藏", "Favorites")], trackingMode: .selectOne, target: nil, action: nil)
+    private var rowGroups: [(header: NSView, spacer: NSView?, rows: [ToolRowView])] = []
+    private var emptyStateView: NSView?
     private var query = ""
     private var catalogTools: [Tool] = []
     private var progressPanel: NSPanel?
     private var currentProcess: Process?
     private var currentInstallTarget: String?
     private var installCancelled = false
+    private var installGeneration = UUID()
     private var updateVersions: [String: String] = [:]
     private var didCheckUpdates = false
     private var overrides = Overrides()
     private var featuredTools: [Tool] = []
-    private var availableAppVersion: String?
-    private var didCheckAppUpdate = false
     private var batchQueue: [Tool] = []
     private var batchIndex = 0
     private var batchSucceeded = 0
@@ -514,7 +586,9 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     private var selectedIndex: Int?
     private var keyMonitor: Any?
 
-    private var allTools: [Tool] {
+    private var allTools: [Tool] = []
+
+    private func mergedTools() -> [Tool] {
         var byRepo: [String: Tool] = [:]
         var byPath: [String: Tool] = [:]
         for item in catalogTools {
@@ -527,6 +601,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             if let repo = base.repo, let catalog = byRepo[repo] {
                 var tool = base
                 tool.path = catalog.path ?? base.path
+                tool.bundleID = catalog.bundleID
                 if let version = catalog.version, !version.isEmpty {
                     tool.subtitle = base.subtitle + " · v\(version)"
                 }
@@ -549,6 +624,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             if let repo = item.repo, let catalog = byRepo[repo] {
                 var tool = item
                 tool.path = catalog.path ?? item.path
+                tool.bundleID = catalog.bundleID
                 if let version = catalog.version, !version.isEmpty {
                     tool.subtitle = item.subtitle + " · v\(version)"
                 }
@@ -570,6 +646,8 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         }
         return merged.map { item in
             var tool = item
+            // Resolve before applying a custom/localized display name.
+            if let installed = InstalledApplications.url(for: tool) { tool.path = installed.path }
             if let custom = overrides.names[item.id], !custom.isEmpty {
                 tool.name = custom
             } else if L10n.isEnglish {
@@ -635,6 +713,8 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         plusButton.font = .systemFont(ofSize: 17, weight: .regular)
         plusButton.contentTintColor = .secondaryLabelColor
         plusButton.translatesAutoresizingMaskIntoConstraints = false
+        plusButton.toolTip = L10n.t("添加 GitHub 工具", "Add a GitHub tool")
+        plusButton.setAccessibilityLabel(plusButton.toolTip)
         view.addSubview(plusButton)
 
         let menuButton = NSButton(title: "⋯", target: self, action: #selector(showMoreMenu(_:)))
@@ -642,6 +722,8 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         menuButton.font = .systemFont(ofSize: 15, weight: .medium)
         menuButton.contentTintColor = .secondaryLabelColor
         menuButton.translatesAutoresizingMaskIntoConstraints = false
+        menuButton.toolTip = L10n.t("设置与更多操作", "Settings and more")
+        menuButton.setAccessibilityLabel(menuButton.toolTip)
         view.addSubview(menuButton)
 
         let closeButton = NSButton(title: "×", target: self, action: #selector(hideWindow))
@@ -649,6 +731,8 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         closeButton.font = .systemFont(ofSize: 16, weight: .medium)
         closeButton.contentTintColor = .secondaryLabelColor
         closeButton.translatesAutoresizingMaskIntoConstraints = false
+        closeButton.toolTip = L10n.t("收起侧边栏", "Hide sidebar")
+        closeButton.setAccessibilityLabel(closeButton.toolTip)
         view.addSubview(closeButton)
 
         countLabel.font = .systemFont(ofSize: 10)
@@ -683,7 +767,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     private func buildSearch() {
         searchField.placeholderString = L10n.t("搜索工具…", "Search tools…")
         searchField.font = .systemFont(ofSize: 12)
-        searchField.controlSize = .small
+        searchField.controlSize = .regular
         searchField.delegate = self
         searchField.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(searchField)
@@ -693,6 +777,23 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             searchField.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
             searchField.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12)
         ])
+        filterControl.selectedSegment = 0
+        filterControl.target = self
+        filterControl.action = #selector(filterChanged)
+        filterControl.controlSize = .small
+        filterControl.translatesAutoresizingMaskIntoConstraints = false
+        filterControl.setAccessibilityLabel(L10n.t("筛选工具", "Filter tools"))
+        view.addSubview(filterControl)
+        NSLayoutConstraint.activate([
+            filterControl.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 8),
+            filterControl.leadingAnchor.constraint(equalTo: searchField.leadingAnchor),
+            filterControl.trailingAnchor.constraint(equalTo: searchField.trailingAnchor)
+        ])
+    }
+
+    @objc private func filterChanged() {
+        applyFilter()
+        scrollToTop()
     }
 
     private func buildScroll() {
@@ -712,7 +813,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         view.addSubview(scrollView)
 
         NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 6),
+            scrollView.topAnchor.constraint(equalTo: filterControl.bottomAnchor, constant: 6),
             scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -40),
@@ -733,53 +834,18 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         divider.boxType = .separator
         divider.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(divider)
-
-        let dot = NSView()
-        dot.wantsLayer = true
-        dot.layer?.cornerRadius = 3
-        dot.layer?.backgroundColor = NSColor.systemGreen.cgColor
-        dot.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(dot)
-
         let hint = NSTextField(labelWithString: L10n.t("↑↓ 选择 · ⏎ 打开 · esc 收起", "↑↓ select · ⏎ open · esc hide"))
-        hint.font = .systemFont(ofSize: 9)
+        hint.font = .systemFont(ofSize: 10.5)
         hint.textColor = .secondaryLabelColor
         hint.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(hint)
-
-        let auto = NSButton(checkboxWithTitle: L10n.t("开机自启", "Launch at login"), target: self, action: #selector(toggleAutostart(_:)))
-        auto.state = autostartEnabled() ? .on : .off
-        auto.font = .systemFont(ofSize: 9.5)
-        auto.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(auto)
-
-        let quit = NSButton(title: L10n.t("退出", "Quit"), target: self, action: #selector(quitApp))
-        quit.isBordered = false
-        quit.font = .systemFont(ofSize: 10)
-        quit.contentTintColor = .secondaryLabelColor
-        quit.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(quit)
-
         NSLayoutConstraint.activate([
             divider.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             divider.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             divider.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -34),
-
-            dot.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 14),
-            dot.centerYAnchor.constraint(equalTo: divider.bottomAnchor, constant: 17),
-            dot.widthAnchor.constraint(equalToConstant: 6),
-            dot.heightAnchor.constraint(equalToConstant: 6),
-
-            hint.leadingAnchor.constraint(equalTo: dot.trailingAnchor, constant: 6),
-            hint.centerYAnchor.constraint(equalTo: dot.centerYAnchor),
-
-            auto.trailingAnchor.constraint(equalTo: quit.leadingAnchor, constant: -8),
-            auto.centerYAnchor.constraint(equalTo: dot.centerYAnchor),
-
-            hint.trailingAnchor.constraint(lessThanOrEqualTo: auto.leadingAnchor, constant: -6),
-
-            quit.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14),
-            quit.centerYAnchor.constraint(equalTo: dot.centerYAnchor)
+            hint.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 14),
+            hint.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -14),
+            hint.centerYAnchor.constraint(equalTo: divider.bottomAnchor, constant: 17)
         ])
     }
 
@@ -801,9 +867,9 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
 
     override func viewDidAppear() {
         super.viewDidAppear()
+        rebuild()
         scrollToTop()
         checkForUpdates()
-        checkAppUpdate()
         refreshFeatured()
     }
 
@@ -848,18 +914,6 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
                 }
             }
             if !self.updateVersions.isEmpty { self.rebuild() }
-        }
-    }
-
-    private func checkAppUpdate() {
-        guard !didCheckAppUpdate else { return }
-        didCheckAppUpdate = true
-        AgentRunner.run(["app-update-check"]) { [weak self] output in
-            guard let self = self, let data = self.lastJSON(output),
-                  (data["update"] as? Bool) == true,
-                  let latest = data["latest"] as? String else { return }
-            self.availableAppVersion = latest
-            self.rebuild()
         }
     }
 
@@ -932,52 +986,6 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         rebuild()
     }
 
-    @objc private func runAppUpdate() {
-        guard progressPanel == nil else { return }
-        showProgress("正在下载新版本…")
-        currentProcess = AgentRunner.run(["app-update"]) { [weak self] output in
-            guard let self = self else { return }
-            self.currentProcess = nil
-            self.progressPanel?.close()
-            self.progressPanel = nil
-            guard let data = self.lastJSON(output), (data["ok"] as? Bool) == true,
-                  let path = data["path"] as? String else {
-                self.showError("更新失败", detail: output)
-                return
-            }
-            self.applyUpdate(newAppPath: path)
-        }
-    }
-
-    private func applyUpdate(newAppPath: String) {
-        let alert = NSAlert()
-        alert.messageText = "更新已下载"
-        alert.informativeText = "需要重启应用完成更新。"
-        alert.addButton(withTitle: "立即重启")
-        alert.addButton(withTitle: "稍后")
-        if alert.runModal() != .alertFirstButtonReturn { return }
-        let destination = Bundle.main.bundleURL
-        let fm = FileManager.default
-        do {
-            if fm.fileExists(atPath: destination.path) {
-                try fm.trashItem(at: destination, resultingItemURL: nil)
-            }
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-            task.arguments = [newAppPath, destination.path]
-            try task.run()
-            task.waitUntilExit()
-            guard task.terminationStatus == 0 else {
-                self.showError("替换 App 失败", detail: "ditto exit \(task.terminationStatus)")
-                return
-            }
-            NSWorkspace.shared.open(destination)
-            NSApp.terminate(nil)
-        } catch {
-            self.showError("更新失败", detail: error.localizedDescription)
-        }
-    }
-
     private func uninstall(_ tool: Tool) {
         let alert = NSAlert()
         alert.messageText = "卸载 \(tool.name)？"
@@ -995,8 +1003,10 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     }
 
     func controlTextDidChange(_ obj: Notification) {
+        if let editor = searchField.currentEditor() as? NSTextView, editor.hasMarkedText() { return }
         query = searchField.stringValue
-        rebuild()
+        applyFilter()
+        scrollToTop()
     }
 
     // MARK: 键盘操作
@@ -1070,7 +1080,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         if !searchField.stringValue.isEmpty {
             searchField.stringValue = ""
             query = ""
-            rebuild()
+            applyFilter()
             return
         }
         if let delegate = NSApp.delegate as? AppDelegate {
@@ -1090,10 +1100,6 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             launchTool(tool)
             return
         }
-        if let local = findInstalledApp(named: tool.name) {
-            NSWorkspace.shared.openApplication(at: local, configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
-            return
-        }
         if tool.manual, let link = tool.url, let url = URL(string: link) {
             NSWorkspace.shared.open(url)
             return
@@ -1103,12 +1109,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             return
         }
         if let link = tool.url {
-            if link.contains("github.com") {
-                startInstall(target: link)
-            } else if let url = URL(string: link) {
-                // 纯网页工具（不是下载），仍然用浏览器打开
-                NSWorkspace.shared.open(url)
-            }
+            if let url = URL(string: link) { NSWorkspace.shared.open(url) }
             return
         }
         // 没有仓库信息：让本地 agent 按名字搜索后直接装
@@ -1139,7 +1140,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             menu.addItem(item)
         }
         add(L10n.t("批量安装未安装工具…", "Batch install missing tools…"), #selector(batchInstall))
-        add(L10n.t("检查更新（Sparkle）…", "Check updates (Sparkle)…"), #selector(checkSparkleUpdates))
+        add(L10n.t("检查更新…", "Check for updates…"), #selector(checkSparkleUpdates))
         add(L10n.t("中英翻译…", "CN ↔ EN translator…"), #selector(showTranslatorWindow))
         add(Translator.onlineEnabled ? L10n.t("关闭在线翻译（MyMemory）", "Disable online translation (MyMemory)") : L10n.t("开启在线翻译（MyMemory）", "Enable online translation (MyMemory)"), #selector(toggleOnlineTranslation))
         add(L10n.t("打开辅助功能设置…", "Open Accessibility settings…"), #selector(openAccessibilitySettings))
@@ -1147,6 +1148,12 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         menu.addItem(NSMenuItem.separator())
         add(L10n.t("导出配置…", "Export settings…"), #selector(exportConfig))
         add(L10n.t("导入配置…", "Import settings…"), #selector(importConfig))
+        let login = NSMenuItem(title: L10n.t("开机自启", "Launch at login"), action: #selector(toggleAutostartMenu), keyEquivalent: "")
+        login.target = self
+        login.state = autostartEnabled() ? .on : .off
+        menu.addItem(login)
+        menu.addItem(.separator())
+        add(L10n.t("退出", "Quit"), #selector(quitApp))
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
     }
 
@@ -1210,7 +1217,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     }
 
     private func startBatch(_ tools: [Tool]) {
-        guard !tools.isEmpty else { return }
+        guard !tools.isEmpty, progressPanel == nil else { return }
         batchQueue = tools
         batchIndex = 0
         batchSucceeded = 0
@@ -1224,9 +1231,11 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         guard !batchCancelled else { finishBatch(); return }
         guard batchIndex < batchQueue.count else { finishBatch(); return }
         let tool = batchQueue[batchIndex]
+        let generation = UUID()
+        installGeneration = generation
         showProgress(L10n.t("批量安装 \(batchIndex + 1)/\(batchQueue.count)：\(tool.name)…", "Installing \(batchIndex + 1)/\(batchQueue.count): \(tool.name)…"))
         currentProcess = AgentRunner.run(["install", tool.repo ?? tool.name]) { [weak self] output in
-            guard let self = self else { return }
+            guard let self = self, self.installGeneration == generation else { return }
             self.currentProcess = nil
             self.progressPanel?.close()
             self.progressPanel = nil
@@ -1251,7 +1260,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         catalogTools = loadCatalogTools()
         rebuild()
         let alert = NSAlert()
-        alert.messageText = L10n.t("批量安装完成", "Batch install finished")
+        alert.messageText = batchCancelled ? L10n.t("批量安装已停止", "Batch install stopped") : L10n.t("批量安装完成", "Batch install finished")
         var lines = [L10n.t("成功 \(batchSucceeded) 个 / 共 \(total) 个", "Succeeded \(batchSucceeded) / \(total)")]
         if !failed.isEmpty {
             lines.append(L10n.t("失败 \(failed.count) 个：", "Failed \(failed.count):"))
@@ -1361,20 +1370,25 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         assignCategory(tool, to: name)
     }
 
-    @objc private func toggleAutostart(_ sender: NSButton) {
-        let enabled = sender.state == .on
-        AgentRunner.run(["autostart", enabled ? "on" : "off", Bundle.main.bundlePath]) { _ in }
+    @objc private func toggleAutostartMenu() {
+        AgentRunner.run(["autostart", autostartEnabled() ? "off" : "on", Bundle.main.bundlePath]) { [weak self] output in
+            if let data = self?.lastJSON(output), (data["ok"] as? Bool) != true {
+                self?.showError(L10n.t("设置失败", "Could not update setting"), detail: output)
+            }
+        }
     }
 
     private func startInstall(target: String, force: Bool = false) {
         guard progressPanel == nil else { return }
+        let generation = UUID()
+        installGeneration = generation
         currentInstallTarget = target
         installCancelled = false
         showProgress(L10n.t("正在搜索、下载并自检…", "Searching, downloading and verifying…"))
         var arguments = ["install", target]
         if force { arguments.append("--force") }
         currentProcess = AgentRunner.run(arguments) { [weak self] output in
-            guard let self = self else { return }
+            guard let self = self, self.installGeneration == generation else { return }
             self.currentProcess = nil
             self.progressPanel?.close()
             self.progressPanel = nil
@@ -1393,12 +1407,14 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     }
 
     @objc private func cancelInstall() {
+        installGeneration = UUID()
         installCancelled = true
         batchCancelled = true
         currentProcess?.terminate()
         currentProcess = nil
         progressPanel?.close()
         progressPanel = nil
+        if !batchQueue.isEmpty { finishBatch() }
     }
 
     private func showProgress(_ text: String) {
@@ -1491,105 +1507,115 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     }
 
     private func rebuild() {
-        let previousId: String? = {
-            guard let index = selectedIndex, visibleRows.indices.contains(index) else { return nil }
-            return visibleRows[index].tool.id
-        }()
+        let previousID = selectedIndex.flatMap { visibleRows.indices.contains($0) ? visibleRows[$0].tool.id : nil }
+        InstalledApplications.refresh()
+        allTools = mergedTools()
         for subview in stack.arrangedSubviews {
             stack.removeArrangedSubview(subview)
             subview.removeFromSuperview()
         }
+        rowGroups = []
+        emptyStateView = nil
         visibleRows = []
-
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        var isFirstGroup = true
-
-        if let version = availableAppVersion {
-            let button = NSButton(title: L10n.t("⬆ 发现新版本 v\(version) · 点击更新", "⬆ Update available v\(version) · click to install"), target: self, action: #selector(runAppUpdate))
-            button.bezelStyle = .rounded
-            button.font = .systemFont(ofSize: 11, weight: .medium)
-            button.contentTintColor = .controlAccentColor
-            stack.addArrangedSubview(button)
-            button.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-            button.heightAnchor.constraint(equalToConstant: 30).isActive = true
-        }
-
+        selectedIndex = nil
+        let categories = currentCategoryNames()
+        let favorites = Set(overrides.favorites)
+        var first = true
         for group in groups {
-            var items = allTools.filter { tool in
-                guard tool.group == group else { return false }
-                if q.isEmpty { return true }
-                return fuzzyContains(tool.name, q) || fuzzyContains(tool.subtitle, q)
+            let items = sorted(allTools.filter { $0.group == group }, group: group).sorted {
+                favorites.contains($0.id) && !favorites.contains($1.id)
             }
-            if items.isEmpty { continue }
-            items = sorted(items, group: group)
-
-            if !isFirstGroup {
-                let spacer = NSView()
-                spacer.translatesAutoresizingMaskIntoConstraints = false
-                spacer.heightAnchor.constraint(equalToConstant: 10).isActive = true
-                stack.addArrangedSubview(spacer)
+            guard !items.isEmpty else { continue }
+            var spacer: NSView?
+            if !first {
+                let gap = NSView()
+                gap.translatesAutoresizingMaskIntoConstraints = false
+                gap.heightAnchor.constraint(equalToConstant: 10).isActive = true
+                stack.addArrangedSubview(gap)
+                spacer = gap
             }
-
             let header = NSTextField(labelWithString: L10n.group(group).uppercased())
-            header.font = .systemFont(ofSize: 9.5, weight: .semibold)
+            header.font = .systemFont(ofSize: 10, weight: .semibold)
             header.textColor = .secondaryLabelColor
             stack.addArrangedSubview(header)
             stack.setCustomSpacing(4, after: header)
-
+            var rows: [ToolRowView] = []
             for tool in items {
-                var display = tool
-                var row: ToolRowView!
-                if let repo = tool.repo, let latest = updateVersions[repo] {
-                    display.subtitle = tool.subtitle + (L10n.isEnglish ? " · update v\(latest)" : " · 可更新 v\(latest)")
-                    row = ToolRowView(tool: display)
-                    row.updateVersion = latest
-                    row.onUpdate = { [weak self] in self?.startInstall(target: repo, force: true) }
-                } else {
-                    row = ToolRowView(tool: display)
-                }
+                let latest = tool.repo.flatMap { updateVersions[$0] }
+                let row = ToolRowView(tool: tool, updateVersion: latest, isFavorite: favorites.contains(tool.id))
                 row.onClick = { [weak self] in self?.handle(tool) }
                 row.onInstall = { [weak self] in self?.startInstall(target: tool.repo ?? tool.name) }
+                if let repo = tool.repo { row.onUpdate = { [weak self] in self?.startInstall(target: repo, force: true) } }
                 row.onUninstall = { [weak self] in self?.uninstall(tool) }
                 row.onRename = { [weak self] in self?.rename(tool) }
                 row.onMoveUp = { [weak self] in self?.move(tool, up: true) }
                 row.onMoveDown = { [weak self] in self?.move(tool, up: false) }
-                row.categories = self.currentCategoryNames()
+                row.categories = categories
                 row.onAssignCategory = { [weak self] category in self?.assignCategory(tool, to: category) }
                 row.onNewCategory = { [weak self] in self?.newCategory(for: tool) }
-                row.onReveal = { [weak self] in
-                    if let path = tool.path {
-                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: expandedPath(path))])
-                    }
+                row.onToggleFavorite = { [weak self] in self?.toggleFavorite(tool) }
+                row.onReveal = {
+                    if let path = tool.path { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: expandedPath(path))]) }
                 }
                 stack.addArrangedSubview(row)
                 row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-                visibleRows.append(row)
+                rows.append(row)
             }
-
-            isFirstGroup = false
+            rowGroups.append((header, spacer, rows))
+            first = false
         }
-
-        if visibleRows.isEmpty && !q.isEmpty {
-            addEmptyState(query: q)
-        }
-
-        if let previousId = previousId,
-           let index = visibleRows.firstIndex(where: { $0.tool.id == previousId }) {
-            selectRowSilently(at: index)
-        } else {
-            for row in visibleRows { row.setSelected(false) }
-            selectedIndex = nil
-        }
-
         let installed = allTools.filter { isInstalled($0) }.count
         countLabel.stringValue = L10n.t("\(installed) / \(allTools.count) 已装", "\(installed) / \(allTools.count) installed")
+        applyFilter(preferredSelection: previousID)
+    }
+
+    private func toggleFavorite(_ tool: Tool) {
+        if overrides.favorites.contains(tool.id) { overrides.favorites.removeAll { $0 == tool.id } }
+        else { overrides.favorites.append(tool.id) }
+        saveOverrides(overrides)
+        rebuild()
+    }
+
+    /// Search reuses existing rows; no application scans or view allocation per keystroke.
+    private func applyFilter(preferredSelection: String? = nil) {
+        let previousID = preferredSelection ?? selectedIndex.flatMap { visibleRows.indices.contains($0) ? visibleRows[$0].tool.id : nil }
+        if let empty = emptyStateView {
+            stack.removeArrangedSubview(empty)
+            empty.removeFromSuperview()
+            emptyStateView = nil
+        }
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let favorites = Set(overrides.favorites)
+        visibleRows = []
+        var hasGroup = false
+        for group in rowGroups {
+            var matches: [ToolRowView] = []
+            for row in group.rows {
+                let tool = row.tool
+                let textMatches = q.isEmpty || fuzzyContains(tool.name, q) || fuzzyContains(tool.subtitle, q)
+                let scopeMatches = filterControl.selectedSegment == 1 ? row.installedSnapshot
+                    : filterControl.selectedSegment == 2 ? favorites.contains(tool.id) : true
+                row.isHidden = !(textMatches && scopeMatches)
+                if !row.isHidden { matches.append(row) }
+            }
+            group.header.isHidden = matches.isEmpty
+            group.spacer?.isHidden = matches.isEmpty || !hasGroup
+            if !matches.isEmpty { hasGroup = true }
+            visibleRows.append(contentsOf: matches)
+        }
+        if visibleRows.isEmpty { addEmptyState(query: q) }
+        for group in rowGroups { for row in group.rows { row.setSelected(false) } }
+        selectedIndex = nil
+        if let previousID = previousID, let index = visibleRows.firstIndex(where: { $0.tool.id == previousID }) {
+            selectRowSilently(at: index)
+        }
     }
 
     private func addEmptyState(query: String) {
         let wrapper = NSView()
         wrapper.translatesAutoresizingMaskIntoConstraints = false
 
-        let title = NSTextField(labelWithString: L10n.t("没有匹配「\(query)」的工具", "No tools match “\(query)”"))
+        let title = NSTextField(labelWithString: query.isEmpty ? L10n.t("此筛选下还没有工具", "No tools in this filter") : L10n.t("没有匹配「\(query)」的工具", "No tools match “\(query)”"))
         title.font = .systemFont(ofSize: 12)
         title.textColor = .secondaryLabelColor
         title.alignment = .center
@@ -1612,6 +1638,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             hint.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor, constant: 12),
             hint.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -12)
         ])
+        emptyStateView = wrapper
         stack.addArrangedSubview(wrapper)
         wrapper.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
     }
@@ -1709,6 +1736,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         buildStatusItem()
         registerHotKey()
+        startSparkleIfNeeded()
         if silentMode {
             showBall()
         } else {
@@ -1799,7 +1827,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func buildWindow() {
-        let width: CGFloat = 320
+        let width: CGFloat = 360
         let height: CGFloat = 660
 
         let window = NSWindow(
@@ -1817,7 +1845,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.backgroundColor = .clear
         window.level = .floating
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        window.minSize = NSSize(width: 300, height: 440)
+        window.minSize = NSSize(width: 340, height: 440)
         window.isRestorable = false
         window.delegate = self
         window.contentViewController = SidebarViewController()
@@ -1874,7 +1902,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard !sparkleStarted else { return }
         sparkleStarted = true
         if updaterController == nil {
-            updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+            updaterController = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
         }
         updaterController.startUpdater()
     }

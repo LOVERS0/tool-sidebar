@@ -4,16 +4,18 @@
 
 [中文说明](README.md) · [Download](https://github.com/LOVERS0/tool-sidebar/releases) · [Website](https://lovers0.github.io/tool-sidebar/)
 
+> **1.10.0 in development (phase 1):** list filters, favorites, explicit row actions, search improvements and installation fixes. Not released yet; the screenshot below shows the previous UI.
+
 ![sidebar](screenshot.png)
 
 ## What it does
 
-- One column for all your small tools (26 built in, grouped + fuzzy search), green dot = installed, click to launch.
+- One column for all your small tools (26 built in, grouped + fuzzy search), All / Installed / Favorites filters and explicit row actions.
 - Keyboard-first: `↑↓` select, `⏎` open/install, `Esc` clear/close, `⌘F` search, `⌥⌘T` toggle sidebar.
 - **Built-in installer**: find latest GitHub Release → pick macOS asset → download → verify SHA-256/signature/Gatekeeper → install to `~/Applications` → add to catalog. No browser windows.
 - Batch install, update checks, uninstall, migration export/import, custom categories/rename/order.
 - Collapse into a draggable floating ball; optional silent launch at login.
-- Sparkle appcast auto-update + native fallback.
+- Sparkle appcast updates with signature verification.
 - English UI automatically on non-Chinese systems (tool names, descriptions, groups and menus are localized).
 - Optional CN↔EN dictionary translator (offline by default; online opt-in). For serious translation use Easydict/Pot from the curated list.
 
@@ -49,7 +51,7 @@ git clone https://github.com/LOVERS0/tool-sidebar
 cd tool-sidebar
 ./build.sh        # requires Xcode Command Line Tools
 ```
-The app is installed to `~/Applications/ToolSidebar.app`.
+The app is built at `build/小工具侧边栏.app`; run `./scripts/test.sh` for regression checks.
 
 ## Privacy
 
