@@ -1,28 +1,20 @@
-# 发布流程（自动化）
+# 发布流程
 
-前置：本机已 `gh auth login`，已安装 Xcode CLT，Sparkle `vendor/bin/sign_update` 可用，私钥在登录钥匙串；Homebrew tap 仓库在 `~/Documents/homebrew-tool-sidebar`。
+前置：已登录有仓库写权限的 `gh`、Xcode Command Line Tools、Sparkle 签名工具，以及登录钥匙串中的既有发布私钥。不要导出或提交私钥。
 
-## 一条命令
+1. 更新 `build.sh` 的默认版本、`CHANGELOG.md` 和 `release-notes/X.Y.Z.md`，完成测试后合并到 main。
+2. 检出与远程 main 一致的提交，保持工作区干净，运行：
 
 ```bash
-# 1) 先把 build.sh 的默认版本改好并推送到 main（CI 按 tag 构建）
-# 2) 发布：
-./scripts/release.sh 1.9.0
+./scripts/release.sh 1.10.0
 ```
 
-脚本会：
+脚本构建到 `build/`，运行回归检查，打包并验证 Sparkle 签名和内嵌公钥，然后创建版本标签。标签 CI 先运行构建和测试，再生成**草稿 Release**。
 
-1. `./build.sh` 构建 universal app；
-2. 打包 `ToolSidebar.zip` 并用 Sparkle `sign_update` 签名；
-3. 在 main 当前 HEAD 创建 `vX.Y.Z` tag，等待 GitHub Actions 构建出 Release；
-4. 用本地构建的 zip 覆盖 Release 资产（确保与本地一致）；
-5. 生成新的 `appcast.xml`（保留旧版本条目），提交到 main 并上传为 Release 资产；
-6. 更新 `~/Documents/homebrew-tool-sidebar` 的 cask 版本与 sha256。
+脚本用最终签名包替换草稿附件，上传 `SHA256SUMS`，使用对应版本的发布说明公开 Release。下载地址公开后，才更新仓库的 `appcast.xml` 和 Release 附件，避免更新源指向未公开的包。
 
-## 手动兜底
+已存在的标签会停止自动发布，避免覆盖已发布附件。手工恢复时，先检查现有 Release、附件 SHA-256 和 CI 状态；对最终 zip 重新签名并核对内嵌公钥。appcast 的签名和长度必须对应最终附件。
 
-如果脚本失败，按 `README`/`RELEASE.md` 里的步骤手动执行；关键是 **appcast 必须用 `sign_update` 对最终 zip 重新签名**。
+Homebrew tap 为可选步骤：默认不修改其他本地仓库。需要时设置 `UPDATE_TAP=1`，并确保 `~/Documents/homebrew-tool-sidebar` 是正确的 tap 检出目录。
 
-## 公证
-
-见 [NOTARIZATION.md](NOTARIZATION.md)。公证后的 zip 才能让普通用户双击打开。
+Apple Developer ID 签名与公证可通过 `SIGN_IDENTITY` / `NOTARY_PROFILE` 配置，见 [NOTARIZATION.md](NOTARIZATION.md)。未配置时产物为 ad-hoc 签名，发布说明必须如实标明未公证。

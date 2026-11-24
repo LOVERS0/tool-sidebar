@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import Darwin
 
 // MARK: - 本地安装 agent（纯 Swift，无 Python 依赖）
 
@@ -130,7 +131,10 @@ enum AgentCLI {
             semaphore.signal()
         }
         task.resume()
-        _ = semaphore.wait(timeout: .now() + 120)
+        if semaphore.wait(timeout: .now() + 120) == .timedOut {
+            task.cancel()
+            return (nil, 0)
+        }
         return (data, status)
     }
 
@@ -161,7 +165,10 @@ enum AgentCLI {
             semaphore.signal()
         }
         task.resume()
-        _ = semaphore.wait(timeout: .now() + 600)
+        if semaphore.wait(timeout: .now() + 600) == .timedOut {
+            task.cancel()
+            return false
+        }
         return success
     }
 
@@ -202,12 +209,32 @@ enum AgentCLI {
         } catch {
             return (-1, "", error.localizedDescription)
         }
-        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
-        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+        // Drain both pipes concurrently: either stream can exceed the pipe buffer.
+        let readers = DispatchGroup()
+        let out = CapturedOutput()
+        let err = CapturedOutput()
+        readers.enter()
+        DispatchQueue.global().async {
+            out.set(outPipe.fileHandleForReading.readDataToEndOfFile())
+            readers.leave()
+        }
+        readers.enter()
+        DispatchQueue.global().async {
+            err.set(errPipe.fileHandleForReading.readDataToEndOfFile())
+            readers.leave()
+        }
         task.waitUntilExit()
+        readers.wait()
         return (task.terminationStatus,
-                String(data: outData, encoding: .utf8) ?? "",
-                String(data: errData, encoding: .utf8) ?? "")
+                String(data: out.get(), encoding: .utf8) ?? "",
+                String(data: err.get(), encoding: .utf8) ?? "")
+    }
+
+    private final class CapturedOutput {
+        private let lock = NSLock()
+        private var data = Data()
+        func set(_ value: Data) { lock.lock(); defer { lock.unlock() }; data = value }
+        func get() -> Data { lock.lock(); defer { lock.unlock() }; return data }
     }
 
     static func normalizeVersion(_ value: String) -> String {
@@ -342,19 +369,34 @@ enum AgentCLI {
         return true
     }
 
-    static func pickAsset(_ assets: [[String: Any]]) -> [String: Any]? {
+    enum Architecture { case arm64, intel }
+
+    static var hostArchitecture: Architecture {
+        var arm64: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        // Also identifies Apple Silicon when this executable runs under Rosetta.
+        if sysctlbyname("hw.optional.arm64", &arm64, &size, nil, 0) == 0, arm64 == 1 { return .arm64 }
+        return .intel
+    }
+
+    static func pickAsset(_ assets: [[String: Any]], architecture: Architecture = hostArchitecture) -> [String: Any]? {
         var scored: [(Int, [String: Any])] = []
         for asset in assets {
             guard let name = asset["name"] as? String, isInstallable(name) else { continue }
             let lower = name.lowercased()
+            let universal = lower.contains("universal") || lower.contains("universal2")
+            let arm = lower.contains("arm64") || lower.contains("aarch64") || lower.contains("silicon")
+            let intel = lower.contains("x86_64") || lower.contains("x64") || lower.contains("intel") || lower.contains("amd64")
+            if !universal {
+                if architecture == .intel && arm && !intel { continue }
+                if architecture == .arm64 && intel && !arm { continue }
+            }
             var score = 0
+            if universal { score += 100 }
+            else if (architecture == .arm64 && arm) || (architecture == .intel && intel) { score += 80 }
             if lower.hasSuffix(".dmg") { score += 8 }
             if lower.hasSuffix(".zip") { score += 4 }
-            if lower.contains("arm64") || lower.contains("aarch64") || lower.contains("universal") || lower.contains("silicon") {
-                score += 3
-            }
             if lower.contains("mac") || lower.contains("darwin") || lower.contains("osx") { score += 2 }
-            if lower.contains("x86_64") || lower.contains("intel") || lower.contains("amd64") { score -= 1 }
             scored.append((score, asset))
         }
         return scored.max(by: { $0.0 < $1.0 })?.1
@@ -390,10 +432,10 @@ enum AgentCLI {
                     mount = line.split(separator: "\t").last.map(String.init)?.trimmingCharacters(in: .whitespaces)
                 }
             }
+            mountPoint = mount
             guard let mountPath = mount, let app = findApp(in: mountPath) else {
                 throw AgentError.message("DMG 里没有 .app")
             }
-            mountPoint = mountPath
             return app
         }
         let (code, _, _) = process("/usr/bin/ditto", ["-x", "-k", assetPath, workDir])
@@ -445,7 +487,7 @@ enum AgentCLI {
         try? FileManager.default.createDirectory(atPath: catalogDir, withIntermediateDirectories: true)
         let object: [String: Any] = ["tools": tools]
         if let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]) {
-            try? data.write(to: URL(fileURLWithPath: catalogPath))
+            try? data.write(to: URL(fileURLWithPath: catalogPath), options: .atomic)
         }
     }
 
@@ -587,26 +629,30 @@ enum AgentCLI {
             result["message"] = "自检完成（未安装）"
             return result
         }
+        guard verification.notarized else {
+            result["ok"] = false
+            result["error"] = "未通过 macOS 安全评估，已停止自动安装。可前往官方发布页查看详情。"
+            return result
+        }
 
         try? FileManager.default.createDirectory(atPath: appsDir, withIntermediateDirectories: true)
         let appName = (appSource as NSString).lastPathComponent
         let finalPath = appsDir + "/" + appName
         let fm = FileManager.default
         if fm.fileExists(atPath: finalPath) {
-            if force {
-                try? fm.trashItem(at: URL(fileURLWithPath: finalPath), resultingItemURL: nil)
-            } else {
+            if !force {
                 result["path"] = finalPath
                 result["already_installed"] = true
                 result["message"] = "已经安装过"
                 return result
             }
         }
-        let (copyCode, _, copyErr) = process("/usr/bin/ditto", [appSource, finalPath])
-        guard copyCode == 0 else {
-            throw AgentError.message("复制 App 失败：\(copyErr)")
+        try replaceApp(source: appSource, destination: finalPath) { staged in
+            let stagedVerification = verify(appPath: staged)
+            guard stagedVerification.codesign, stagedVerification.notarized else {
+                throw AgentError.message("新版本副本未通过 macOS 安全评估，原应用已保留")
+            }
         }
-        process("/usr/bin/xattr", ["-dr", "com.apple.quarantine", finalPath])
 
         result["path"] = finalPath
         result["already_installed"] = false
@@ -620,12 +666,40 @@ enum AgentCLI {
             "icon": "shippingbox",
             "group": group,
             "path": finalPath,
+            "bundleID": Bundle(path: finalPath)?.bundleIdentifier ?? "",
             "repo": full,
             "version": info.version,
             "sha256": digest,
             "installedAt": formatter.string(from: Date()),
         ])
         return result
+    }
+
+    /// Stage beside the destination so renames stay on one filesystem.
+    /// Restore the previous app if committing the new copy fails.
+    static func replaceApp(source: String, destination: String, validate: (String) throws -> Void = { _ in }) throws {
+        let fm = FileManager.default
+        let parent = URL(fileURLWithPath: destination).deletingLastPathComponent()
+        let nonce = UUID().uuidString
+        let staged = parent.appendingPathComponent(".toolsidebar-\(nonce).app")
+        let backup = parent.appendingPathComponent(".toolsidebar-backup-\(nonce).app")
+        let final = URL(fileURLWithPath: destination)
+        defer { try? fm.removeItem(at: staged) }
+        let copy = process("/usr/bin/ditto", [source, staged.path])
+        guard copy.code == 0 else { throw AgentError.message("复制 App 失败：\(copy.err)") }
+        try validate(staged.path)
+        let hadPrevious = fm.fileExists(atPath: destination)
+        if hadPrevious { try fm.moveItem(at: final, to: backup) }
+        do {
+            try fm.moveItem(at: staged, to: final)
+        } catch {
+            if hadPrevious {
+                do { try fm.moveItem(at: backup, to: final) }
+                catch { throw AgentError.message("替换失败，原应用备份保留在：\(backup.path)") }
+            }
+            throw error
+        }
+        if hadPrevious { try? fm.removeItem(at: backup) }
     }
 
     // MARK: 搜索 / 卸载 / 更新 / 自启
@@ -725,40 +799,7 @@ enum AgentCLI {
     }
 
     static func appUpdate() -> Int32 {
-        guard let release = api("/repos/\(appRepo)/releases/latest"),
-              let assets = release["assets"] as? [[String: Any]],
-              let asset = assets.first(where: { ($0["name"] as? String)?.lowercased().hasSuffix(".zip") == true }),
-              let name = asset["name"] as? String,
-              let urlString = asset["browser_download_url"] as? String,
-              let url = URL(string: urlString) else {
-            return fail("没有找到可用的更新包")
-        }
-        let latest = normalizeVersion(release["tag_name"] as? String ?? "")
-        guard isNewer(latest, currentAppVersion()) else {
-            return fail("已是最新版本")
-        }
-        let updateDir = home + "/Library/Caches/ToolSidebar/update"
-        try? FileManager.default.removeItem(atPath: updateDir)
-        try? FileManager.default.createDirectory(atPath: updateDir, withIntermediateDirectories: true)
-        let zipPath = updateDir + "/" + name
-        guard downloadWithMirror(urlString, to: URL(fileURLWithPath: zipPath)) != nil else {
-            return fail("更新包下载失败")
-        }
-        if let digest = asset["digest"] as? String, digest.hasPrefix("sha256:"),
-           let actual = sha256(zipPath) {
-            let expected = String(digest.dropFirst("sha256:".count))
-            if expected.lowercased() != actual.lowercased() {
-                return fail("更新包 SHA-256 校验失败")
-            }
-        }
-        let appDir = updateDir + "/app"
-        try? FileManager.default.createDirectory(atPath: appDir, withIntermediateDirectories: true)
-        let (code, _, _) = process("/usr/bin/ditto", ["-x", "-k", zipPath, appDir])
-        guard code == 0, let app = findApp(in: appDir) else {
-            return fail("更新包解压失败")
-        }
-        emit(["ok": true, "path": app, "latest": normalizeVersion(release["tag_name"] as? String ?? "")])
-        return 0
+        fail("请在应用的 ⋯ 菜单选择「检查更新…」，由 Sparkle 验证签名并完成更新。")
     }
 
     static func autostart(action: String, appPath: String) -> Int32 {

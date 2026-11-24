@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.10.0 — 2026-11-24
+- Reuse list rows while searching; add All / Installed / Favorites filters and favorite actions.
+- Show explicit Open / Install / Update / Get / Visit / Copy actions and larger subtitles. Move launch-at-login and Quit into the menu.
+- Resolve installed apps from both Applications folders and recorded Bundle IDs before applying custom display names.
+- Select downloads for the host architecture, including Apple Silicon under Rosetta.
+- Stage and validate updates before replacing the installed app; restore the previous app on commit failure.
+- Keep macOS quarantine metadata and stop automatic installation when Gatekeeper assessment fails.
+- Use Sparkle exclusively for application updates; the old direct-replacement CLI now directs users to Sparkle.
+- Drain subprocess stdout/stderr concurrently, cancel timed-out network tasks, ignore callbacks from cancelled install sessions, and save settings/catalog files atomically.
+- Build into `build/` by default without replacing the installed app. Add regression checks to CI.
+- Translate full online input in UTF-8-sized segments; cancel superseded requests on editing, resubmission, direction changes and window close.
+- Reject HTTP/service errors as translation results and label dictionary fallback. Bound the translation cache and synchronize the CLI result.
+- Resize the translator with Auto Layout, add ⌘↩, input feedback and accessible labels.
+- Refresh native screenshots and Chinese/English README with current behavior and installation requirements.
+
 ## 1.9.2
 - Remove developer jargon from user-facing copy: “本地安装 agent” → “正在安装 / 安装助手”；“agent 没有返回结果” → “安装器没有返回结果”.
 - English UI: “Local install agent” → “Built-in installer”; “agent harness” → “AI workspace”.
