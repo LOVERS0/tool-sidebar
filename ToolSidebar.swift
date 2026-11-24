@@ -176,9 +176,9 @@ func saveOverrides(_ value: Overrides) {
     try? data.write(to: url, options: .atomic)
 }
 
-func loadFeaturedCache() -> [Tool] {
+func loadFeaturedCache(preferBundled: Bool = false) -> [Tool] {
     var payload: Data?
-    if let cached = try? Data(contentsOf: URL(fileURLWithPath: featuredCachePath)) {
+    if !preferBundled, let cached = try? Data(contentsOf: URL(fileURLWithPath: featuredCachePath)) {
         payload = cached
     } else if let bundled = Bundle.main.url(forResource: "featured", withExtension: "json") {
         payload = try? Data(contentsOf: bundled)
@@ -557,6 +557,18 @@ final class ToolRowView: NSView {
 // MARK: - 侧边栏控制器
 
 final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
+    private let previewMode: Bool
+
+    init(preview: Bool = false) {
+        previewMode = preview
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        previewMode = false
+        super.init(coder: coder)
+    }
+
     private let scrollView = NSScrollView()
     private let documentView = FlippedView()
     private let stack = NSStackView()
@@ -685,9 +697,9 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        catalogTools = loadCatalogTools()
-        overrides = loadOverrides()
-        featuredTools = loadFeaturedCache()
+        catalogTools = previewMode ? [] : loadCatalogTools()
+        overrides = previewMode ? Overrides() : loadOverrides()
+        featuredTools = loadFeaturedCache(preferBundled: previewMode)
         buildHeader()
         buildSearch()
         buildScroll()
@@ -869,6 +881,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         super.viewDidAppear()
         rebuild()
         scrollToTop()
+        guard !previewMode else { return }
         checkForUpdates()
         refreshFeatured()
     }

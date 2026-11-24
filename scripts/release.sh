@@ -8,10 +8,13 @@ if [ -z "$VERSION" ]; then
   echo "用法: $0 <version>，例如 $0 1.9.0" >&2
   exit 1
 fi
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "版本格式应为 X.Y.Z" >&2; exit 1; }
 TAG="v$VERSION"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="$ROOT/build/小工具侧边栏.app"
 REPO="LOVERS0/tool-sidebar"
+NOTES_FILE="${2:-$ROOT/release-notes/$VERSION.md}"
+[ -f "$NOTES_FILE" ] || { echo "缺少发布说明：$NOTES_FILE" >&2; exit 1; }
 TAP_DIR="$HOME/Documents/homebrew-tool-sidebar"
 cd "$ROOT"
 
@@ -20,13 +23,22 @@ command -v gh >/dev/null || { echo "缺少 gh" >&2; exit 1; }
 gh auth status >/dev/null 2>&1 || { echo "请先 gh auth login" >&2; exit 1; }
 
 echo "== 1/7 构建 v$VERSION =="
+git diff --quiet && git diff --cached --quiet || { echo "请先提交改动" >&2; exit 1; }
+LOCAL_COMMIT=$(git rev-parse HEAD)
+REMOTE_COMMIT=$(gh api "repos/$REPO/commits/main" --jq .sha)
+[ "$LOCAL_COMMIT" = "$REMOTE_COMMIT" ] || { echo "请从已合并的 main 发布" >&2; exit 1; }
 VERSION="$VERSION" ./build.sh
+./scripts/test.sh
 
 echo "== 2/7 打包并签名 =="
 ZIP="$ROOT/build/ToolSidebar.zip"
 rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
 SIG=$(vendor/bin/sign_update "$ZIP" 2>/dev/null | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
+vendor/bin/sign_update --verify "$ZIP" "$SIG"
+EMBEDDED_KEY=$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$APP/Contents/Info.plist")
+SIGNING_KEY=$(vendor/bin/generate_keys -p)
+[ "$EMBEDDED_KEY" = "$SIGNING_KEY" ] || { echo "Sparkle 公钥不匹配" >&2; exit 1; }
 SIZE=$(stat -f%z "$ZIP")
 SHA=$(shasum -a 256 "$ZIP" | awk '{print $1}')
 [ -n "$SIG" ] || { echo "Sparkle 签名失败" >&2; exit 1; }
@@ -34,7 +46,8 @@ echo "sha256=$SHA size=$SIZE"
 
 echo "== 3/7 打 tag $TAG =="
 if gh api "repos/$REPO/git/ref/tags/$TAG" >/dev/null 2>&1; then
-  echo "tag 已存在，跳过"
+  echo "tag 已存在，请核对现有发布，避免覆盖已发布资产" >&2
+  exit 1
 else
   HEAD=$(gh api "repos/$REPO/commits/main" --jq .sha)
   gh api --method POST "repos/$REPO/git/refs" \
@@ -50,7 +63,12 @@ done
 gh release view "$TAG" >/dev/null || { echo "CI 未生成 Release，请检查 Actions" >&2; exit 1; }
 
 echo "== 5/7 上传本地构建并更新 appcast =="
+[ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = "true" ] || { echo "只允许更新草稿 Release" >&2; exit 1; }
 gh release upload "$TAG" "$ZIP" --clobber >/dev/null
+(cd "$ROOT/build" && shasum -a 256 ToolSidebar.zip > SHA256SUMS)
+gh release upload "$TAG" "$ROOT/build/SHA256SUMS" --clobber >/dev/null
+# Publish the asset before exposing its URL in the update feed.
+gh release edit "$TAG" --title "ToolSidebar $VERSION" --notes-file "$NOTES_FILE" --draft=false --latest
 python3 - "$VERSION" "$TAG" "$SIZE" "$SIG" <<'PY'
 import datetime, re, sys
 version, tag, size, sig = sys.argv[1:5]
@@ -83,7 +101,7 @@ gh api --method PUT "repos/$REPO/contents/appcast.xml" \
 echo "appcast pushed"
 
 echo "== 6/7 更新 Homebrew cask =="
-if [ -f "$TAP_DIR/Casks/tool-sidebar.rb" ]; then
+if [ "${UPDATE_TAP:-0}" = "1" ] && [ -f "$TAP_DIR/Casks/tool-sidebar.rb" ]; then
   python3 - "$TAP_DIR/Casks/tool-sidebar.rb" "$VERSION" "$SHA" <<'PY'
 import re, sys
 path, version, sha = sys.argv[1:4]
@@ -103,9 +121,4 @@ else
 fi
 
 echo "== 7/7 完成 =="
-gh release edit "$TAG" --notes "## $TAG
-
-- ToolSidebar.zip SHA-256: \`$SHA\`
-
-See [CHANGELOG.md](https://github.com/LOVERS0/tool-sidebar/blob/main/CHANGELOG.md)." >/dev/null
 echo "https://github.com/LOVERS0/tool-sidebar/releases/tag/$TAG"

@@ -8,7 +8,7 @@ struct RegressionTests {
         checks += 1
     }
 
-    static func main() throws {
+    @MainActor static func main() async throws {
         let assets: [[String: Any]] = [
             ["name": "Utility-macos-arm64.dmg"],
             ["name": "Utility-macos-x86_64.zip"],
@@ -65,7 +65,7 @@ struct RegressionTests {
         expect(isInstalled(byName), "Recognize apps outside a hardcoded catalog path")
 
         _ = NSApplication.shared
-        let controller = SidebarViewController()
+        let controller = SidebarViewController(preview: true)
         let view = controller.view
         func descendants(_ parent: NSView) -> [NSView] { parent.subviews.flatMap { [$0] + descendants($0) } }
         let nodes = descendants(view)
@@ -87,6 +87,56 @@ struct RegressionTests {
         filter.selectedSegment = 2
         NSApp.sendAction(filter.action!, to: filter.target, from: filter)
         expect(rows.filter { !$0.isHidden }.count == rows.filter { $0.isFavorite }.count, "Favorites filter must match persisted favorites")
+        let longText = String(repeating: "Long paragraph with words. 中文段落。 👩🏽‍💻\n", count: 30)
+        let parts = Translator.chunks(longText)
+        expect(parts.joined() == longText && parts.allSatisfy { $0.utf8.count <= 450 }, "Chunk long multilingual text without losing content or exceeding the byte budget")
+        let combining = "a" + String(repeating: "\u{0301}", count: 600)
+        expect(Translator.chunks(combining).joined() == combining && Translator.chunks(combining).allSatisfy { $0.utf8.count <= 450 }, "Even a very long composed grapheme must survive chunking")
+        var requests: [String] = []
+        let translated = await Translator.onlineTranslate(longText, toChinese: true, useCache: false) { request in
+            let part = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!.first { $0.name == "q" }!.value!
+            requests.append(part)
+            let data = try JSONSerialization.data(withJSONObject: ["responseStatus": 200, "responseData": ["translatedText": part]])
+            return (data, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }
+        expect(translated == longText.trimmingCharacters(in: .whitespacesAndNewlines) && requests.count > 1, "Translate every segment and preserve paragraph separators; do not truncate to the first segment")
+        let rejected = await Translator.onlineTranslate("HTTP failure fixture", toChinese: true, useCache: false) { request in
+            let data = Data("{\"responseStatus\":200,\"responseData\":{\"translatedText\":\"error body\"}}".utf8)
+            return (data, HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil, headerFields: nil)!)
+        }
+        expect(rejected == nil, "Do not show an HTTP error response as a successful translation")
+        let quota = await Translator.onlineTranslate("Quota fixture", toChinese: true, useCache: false) { request in
+            let data = Data("{\"responseStatus\":403,\"responseData\":{\"translatedText\":\"quota exceeded\"}}".utf8)
+            return (data, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }
+        expect(quota == nil, "Reject service-level failures even when HTTP succeeds")
+        let cancelled = Task { await Translator.onlineTranslate("Cancelled fixture", toChinese: true, useCache: false) { request in
+            try await Task.sleep(nanoseconds: 1_000_000_000)
+            return (Data(), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        } }
+        cancelled.cancel()
+        let cancelledResult = await cancelled.value
+        expect(cancelledResult == nil, "Cancelled requests must not produce a translation")
+
+        UserDefaults.standard.setVolatileDomain(["translationOnlineEnabled": false], forName: UserDefaults.argumentDomain)
+        let translator = TranslatorWindowController()
+        let translatorNodes = descendants(translator.window!.contentView!)
+        let input = translatorNodes.compactMap { $0 as? NSTextView }.first { $0.isEditable }!
+        let outputView = translatorNodes.compactMap { $0 as? NSTextView }.first { !$0.isEditable }!
+        let translateButton = translatorNodes.compactMap { $0 as? NSButton }.first { $0.action?.description == "translateAction" }!
+        input.string = "clipboard"
+        NSApp.sendAction(translateButton.action!, to: translateButton.target, from: translateButton)
+        input.string = "timer"
+        NSApp.sendAction(translateButton.action!, to: translateButton.target, from: translateButton)
+        try await Task.sleep(nanoseconds: 150_000_000)
+        expect(outputView.string == "计时器", "A superseded request must not overwrite the latest submitted text")
+        input.string = "changed text"
+        translator.textDidChange(Notification(name: NSText.didChangeNotification, object: input))
+        expect(outputView.string.isEmpty, "Editing input must invalidate old output and pending requests")
+        input.string = String(repeating: "中", count: 2100)
+        NSApp.sendAction(translateButton.action!, to: translateButton.target, from: translateButton)
+        expect(outputView.string.isEmpty, "Overlong input must be rejected instead of partially translated")
+        translator.window?.close()
         print("PASS: \(checks) regression checks")
     }
 }
