@@ -4,17 +4,17 @@ A floating macOS sidebar for writing, AI and system utilities. Press `⌥⌘T`, 
 
 [中文](README.md) · [Download](https://github.com/LOVERS0/tool-sidebar/releases/latest) · [Website](https://lovers0.github.io/tool-sidebar/) · [Issues](https://github.com/LOVERS0/tool-sidebar/issues)
 
-![ToolSidebar 1.10.0: filters and explicit row actions](screenshot.png)
+![ToolSidebar 1.11.0: filters and explicit row actions](screenshot.png)
 
-## New in 1.10.0
+## 1.11.0: focus on launching and managing apps
 
-- All / Installed / Favorites filters. Right-click to favorite a tool; favorites appear first within their category.
-- Explicit Open, Install, Update, Get, Visit and Copy actions.
-- Search reuses existing rows instead of rebuilding the list after each keystroke.
-- Shared installed-app detection across both Applications folders and recorded Bundle IDs.
-- Host-aware Intel / Apple Silicon download selection, including Rosetta; Universal packages take priority.
-- Staged, validated replacement of installed tools with rollback on commit failure. ToolSidebar itself updates through Sparkle.
-- Online translation processes the full text in segments. Editing, changing direction or submitting again cancels the previous request. Failures are clearly labeled as dictionary fallback.
+- Remove the built-in online translator and offline dictionary window. The app no longer calls a translation service.
+- Apps without an explicit download source show Missing instead of guessing a repository to install.
+- Remove install-all, AI-skill/web-editing shortcuts, command copying and CLI-only defaults.
+- Import restores the repository list and settings without installing apps. Missing apps remain uninstalled until you choose them.
+- Keep a small menu for updates, launch at login, configuration backup, feedback and quit. Launch failures show the actual error without directing users to Accessibility permissions.
+
+Search, favorites, categories, keyboard shortcuts, the floating ball and individual app installation/update/removal remain available. Existing catalog records, favorites and older backups stay compatible.
 
 ## Install
 
@@ -33,13 +33,11 @@ brew install --cask tool-sidebar
 - `⌘F`: search; `↑↓`: select; Return: open or perform the row action; Escape: clear search, then hide.
 - Right-click a row to favorite, rename, reorder, categorize, update, uninstall or reveal a cataloged app.
 - `+`: add a GitHub repository or search term.
-- `⋯`: check for ToolSidebar updates, configure launch at login, batch-install tools, export/import settings and open the translator.
+- `⋯`: check for ToolSidebar updates, configure launch at login and export/import settings.
 
-Includes 26 built-in entries plus a remotely refreshed featured list. Manual-download and web entries open the corresponding page. Settings export includes favorites, custom names, order, categories, installed repositories and launch-at-login preference.
+Includes 22 built-in app entries plus a remotely refreshed featured list. Manual-download entries open the official page. Settings export includes favorites, custom names, order, categories, installed repositories and launch-at-login preference. Importing never automatically downloads or installs apps.
 
-## Translation and network requests
-
-The default offline mode only replaces known dictionary terms; it is **not full-text translation**. Online translation is opt-in and sends submitted text to MyMemory. Longer text is segmented, oversized input prompts you to split it, and online failures are labeled as dictionary fallback. Press `⌘↩` to translate.
+## Network requests
 
 GitHub requests provide search/release metadata and downloads. A GitHub token can come from `~/.config/tool-sidebar/github_token`, `GITHUB_TOKEN` or an authenticated `gh`; it is only used for GitHub API requests. Direct download failure may fall back to `ghproxy.net`.
 
@@ -62,7 +60,7 @@ cd tool-sidebar
 
 Output: `build/小工具侧边栏.app`. The default build does not overwrite an installed copy. `APP_PATH` can select a different absolute `.app` destination; `VERSION`, `SIGN_IDENTITY` and `NOTARY_PROFILE` configure the version, Developer ID signing and notarization.
 
-Regression checks cover architecture selection, failure preservation, subprocess streams, settings compatibility, installed-app resolution, row reuse, filters, translation segmentation and cancellation. Run `./scripts/screenshots.sh` to capture the native views. See [RELEASE.md](RELEASE.md) and [NOTARIZATION.md](NOTARIZATION.md) for distribution.
+Regression checks cover architecture selection, failure preservation, subprocess streams, settings compatibility, installed-app resolution, row reuse, filters, the reduced menu and configuration restore. Run `./scripts/screenshots.sh` to capture the native views. See [RELEASE.md](RELEASE.md) and [NOTARIZATION.md](NOTARIZATION.md) for distribution.
 
 ## License
 

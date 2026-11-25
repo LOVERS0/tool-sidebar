@@ -6,7 +6,7 @@
 2. 检出与远程 main 一致的提交，保持工作区干净，运行：
 
 ```bash
-./scripts/release.sh 1.10.0
+./scripts/release.sh 1.11.0
 ```
 
 脚本构建到 `build/`，运行回归检查，打包并验证 Sparkle 签名和内嵌公钥，然后创建版本标签。标签 CI 先运行构建和测试，再生成**草稿 Release**。

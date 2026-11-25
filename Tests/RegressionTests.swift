@@ -8,7 +8,7 @@ struct RegressionTests {
         checks += 1
     }
 
-    @MainActor static func main() async throws {
+    @MainActor static func main() throws {
         let assets: [[String: Any]] = [
             ["name": "Utility-macos-arm64.dmg"],
             ["name": "Utility-macos-x86_64.zip"],
@@ -87,56 +87,30 @@ struct RegressionTests {
         filter.selectedSegment = 2
         NSApp.sendAction(filter.action!, to: filter.target, from: filter)
         expect(rows.filter { !$0.isHidden }.count == rows.filter { $0.isFavorite }.count, "Favorites filter must match persisted favorites")
-        let longText = String(repeating: "Long paragraph with words. 中文段落。 👩🏽‍💻\n", count: 30)
-        let parts = Translator.chunks(longText)
-        expect(parts.joined() == longText && parts.allSatisfy { $0.utf8.count <= 450 }, "Chunk long multilingual text without losing content or exceeding the byte budget")
-        let combining = "a" + String(repeating: "\u{0301}", count: 600)
-        expect(Translator.chunks(combining).joined() == combining && Translator.chunks(combining).allSatisfy { $0.utf8.count <= 450 }, "Even a very long composed grapheme must survive chunking")
-        var requests: [String] = []
-        let translated = await Translator.onlineTranslate(longText, toChinese: true, useCache: false) { request in
-            let part = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!.first { $0.name == "q" }!.value!
-            requests.append(part)
-            let data = try JSONSerialization.data(withJSONObject: ["responseStatus": 200, "responseData": ["translatedText": part]])
-            return (data, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
-        }
-        expect(translated == longText.trimmingCharacters(in: .whitespacesAndNewlines) && requests.count > 1, "Translate every segment and preserve paragraph separators; do not truncate to the first segment")
-        let rejected = await Translator.onlineTranslate("HTTP failure fixture", toChinese: true, useCache: false) { request in
-            let data = Data("{\"responseStatus\":200,\"responseData\":{\"translatedText\":\"error body\"}}".utf8)
-            return (data, HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil, headerFields: nil)!)
-        }
-        expect(rejected == nil, "Do not show an HTTP error response as a successful translation")
-        let quota = await Translator.onlineTranslate("Quota fixture", toChinese: true, useCache: false) { request in
-            let data = Data("{\"responseStatus\":403,\"responseData\":{\"translatedText\":\"quota exceeded\"}}".utf8)
-            return (data, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
-        }
-        expect(quota == nil, "Reject service-level failures even when HTTP succeeds")
-        let cancelled = Task { await Translator.onlineTranslate("Cancelled fixture", toChinese: true, useCache: false) { request in
-            try await Task.sleep(nanoseconds: 1_000_000_000)
-            return (Data(), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
-        } }
-        cancelled.cancel()
-        let cancelledResult = await cancelled.value
-        expect(cancelledResult == nil, "Cancelled requests must not produce a translation")
-
-        UserDefaults.standard.setVolatileDomain(["translationOnlineEnabled": false], forName: UserDefaults.argumentDomain)
-        let translator = TranslatorWindowController()
-        let translatorNodes = descendants(translator.window!.contentView!)
-        let input = translatorNodes.compactMap { $0 as? NSTextView }.first { $0.isEditable }!
-        let outputView = translatorNodes.compactMap { $0 as? NSTextView }.first { !$0.isEditable }!
-        let translateButton = translatorNodes.compactMap { $0 as? NSButton }.first { $0.action?.description == "translateAction" }!
-        input.string = "clipboard"
-        NSApp.sendAction(translateButton.action!, to: translateButton.target, from: translateButton)
-        input.string = "timer"
-        NSApp.sendAction(translateButton.action!, to: translateButton.target, from: translateButton)
-        try await Task.sleep(nanoseconds: 150_000_000)
-        expect(outputView.string == "计时器", "A superseded request must not overwrite the latest submitted text")
-        input.string = "changed text"
-        translator.textDidChange(Notification(name: NSText.didChangeNotification, object: input))
-        expect(outputView.string.isEmpty, "Editing input must invalidate old output and pending requests")
-        input.string = String(repeating: "中", count: 2100)
-        NSApp.sendAction(translateButton.action!, to: translateButton.target, from: translateButton)
-        expect(outputView.string.isEmpty, "Overlong input must be rejected instead of partially translated")
-        translator.window?.close()
+        let missingTool = Tool(id: "missing", name: "Missing app", subtitle: "", icon: "app", group: "Test", path: root.appendingPathComponent("NotInstalled.app").path)
+        let missingRow = ToolRowView(tool: missingTool)
+        let missingAction = missingRow.subviews.compactMap { $0 as? NSButton }.first!
+        expect(!missingAction.isEnabled && missingAction.title == L10n.t("未安装", "Missing"), "A missing app without an explicit source must not offer guessed installation")
+        let actions = Set(controller.makeMoreMenu().items.compactMap { $0.action?.description })
+        expect(actions == Set(["checkSparkleUpdates", "toggleAutostartMenu", "exportConfig", "importConfig", "openGitHubRepo", "quitApp"]), "More menu must contain only update, startup, backup, feedback and quit actions")
+        let retired = Set(["typst", "doocsmd", "avoidai", "markitdown"])
+        expect(Toolbox.builtin.allSatisfy { !retired.contains($0.id) }, "Retire non-application and command-copy defaults")
+        expect(Toolbox.builtin.contains { $0.id == "maccy" } && Toolbox.builtin.contains { $0.id == "rectangle" }, "Keep normal application launchers")
+        let installedEntry = CatalogTool(id: "repo:owner/existing", name: "Existing name", subtitle: "", icon: "app", group: "已收录", path: "/Applications/Existing.app", repo: "owner/existing", version: "3.0", sha256: "unchanged", installedAt: "existing-date", bundleID: "fixture.existing")
+        let restored = try restoreToolList([
+            MigrationTool(repo: "OWNER/existing", name: "Do not overwrite", group: nil),
+            MigrationTool(repo: "owner/new", name: "New tool", group: "系统小工具"),
+            MigrationTool(repo: "owner/new", name: "Duplicate", group: nil)
+        ], keeping: [installedEntry])
+        expect(restored.count == 2, "Restore repository entries without duplicates")
+        expect(restored[0].name == "Existing name" && restored[0].path == installedEntry.path && restored[0].sha256 == "unchanged" && restored[0].bundleID == "fixture.existing", "Import must preserve existing installed app metadata")
+        expect(restored[1].path == nil && restored[1].version == nil && restored[1].installedAt == nil, "Restore a missing tool as an uninstalled entry instead of installing it")
+        do {
+            _ = try restoreToolList([MigrationTool(repo: "not-a-repository", name: "Invalid", group: nil)], keeping: [installedEntry])
+            fatalError("Invalid backup repository must fail")
+        } catch { checks += 1 }
+        let oldBackup = try JSONDecoder().decode(MigrationFile.self, from: Data("{\"version\":1,\"tools\":[{\"repo\":\"owner/new\",\"name\":\"New tool\"}],\"overrides\":{\"names\":{\"maccy\":\"剪贴板\"},\"orders\":{},\"categories\":{},\"customCategories\":[]},\"autostart\":false}".utf8))
+        expect(oldBackup.overrides?.names["maccy"] == "剪贴板" && oldBackup.tools.count == 1, "Continue reading existing configuration backups after removing automatic installation")
         print("PASS: \(checks) regression checks")
     }
 }

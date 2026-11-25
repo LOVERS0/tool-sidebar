@@ -24,8 +24,6 @@ enum L10n {
     private static let nameMap: [String: String] = [
         "作家助手": "Writer Assistant",
         "思源笔记": "SiYuan",
-        "公众号排版 doocs/md": "doocs/md",
-        "去 AI 味 avoid-ai-writing": "Avoid AI Writing",
         "妙言 MiaoYan": "MiaoYan",
     ]
 
@@ -35,15 +33,11 @@ enum L10n {
         "沉浸写作 / 大纲": "Focused writing / outlines",
         "设定集 / 人物卡 / 世界观": "Worldbuilding / characters / lore",
         "小说工程 / 章节 / 情节线 · 需手动下载": "Novel projects / plotlines · manual download",
-        "排版出 PDF / 样书 · 需手动下载": "Typeset PDF / proofs · manual download",
-        "Markdown → 微信样式": "Markdown → WeChat styling",
-        "AI Skill · 需配合 AI 助手": "AI skill · requires an AI assistant",
         "一键切换 AI 供应商": "Switch AI providers",
         "当前使用的 AI 工作台": "Current AI workspace",
         "桌面版": "Desktop app",
         "Git 图形客户端": "Git GUI",
         "个人 AI 助理": "Personal AI assistant",
-        "文档转 Markdown · 点击复制命令": "Docs → Markdown · copy command",
         "剪贴板历史": "Clipboard history",
         "窗口吸附": "Window snapping",
         "文本扩展 / 缩写": "Text expander / snippets",
