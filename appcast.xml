@@ -6,6 +6,15 @@
     <description>macOS 悬浮小工具侧边栏 + 本地安装 agent</description>
     <language>zh-CN</language>
     <item>
+      <title>Version 1.11.0</title>
+      <link>https://github.com/LOVERS0/tool-sidebar/releases/tag/v1.11.0</link>
+      <sparkle:version>1.11.0</sparkle:version>
+      <sparkle:shortVersionString>1.11.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <pubDate>Wed, 25 Nov 2026 12:21:34 +0000</pubDate>
+      <enclosure url="https://github.com/LOVERS0/tool-sidebar/releases/download/v1.11.0/ToolSidebar.zip" length="1473993" type="application/octet-stream" sparkle:edSignature="sdlmOHg3Kk4UMRaDw/kU16cY606Yiq4QsMGlrQtwhqO5c8p9RYpPk++YcfZ3BJwHYOsc+ov522yoFya7mSsaBg==" />
+    </item>
+    <item>
       <title>Version 1.10.0</title>
       <link>https://github.com/LOVERS0/tool-sidebar/releases/tag/v1.10.0</link>
       <sparkle:version>1.10.0</sparkle:version>
