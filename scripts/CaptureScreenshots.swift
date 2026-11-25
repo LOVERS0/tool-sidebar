@@ -3,7 +3,7 @@ import AppKit
 @main
 struct CaptureScreenshots {
     @MainActor static func main() async throws {
-        UserDefaults.standard.setVolatileDomain(["appLanguage": "zh", "translationOnlineEnabled": false], forName: UserDefaults.argumentDomain)
+        UserDefaults.standard.setVolatileDomain(["appLanguage": "zh"], forName: UserDefaults.argumentDomain)
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
         NSApp.appearance = NSAppearance(named: .darkAqua)
@@ -13,14 +13,7 @@ struct CaptureScreenshots {
         window.contentViewController = sidebar
         window.setContentSize(NSSize(width: 360, height: 660))
         try capture(sidebar.view, to: "screenshot.png")
-        let translator = TranslatorWindowController()
-        let content = translator.window!.contentView!
-        func descendants(_ view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + descendants($0) } }
-        let button = descendants(content).compactMap { $0 as? NSButton }.first { $0.action?.description == "translateAction" }!
-        NSApp.sendAction(button.action!, to: button.target, from: button)
-        try await Task.sleep(nanoseconds: 200_000_000)
-        try capture(content, to: "translator.png")
-        print("Captured native sidebar and translator views")
+        print("Captured native sidebar view")
     }
 
     @MainActor static func capture(_ view: NSView, to path: String) throws {

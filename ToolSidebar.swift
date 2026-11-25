@@ -13,7 +13,6 @@ struct Tool {
     var group: String
     var path: String? = nil
     var url: String? = nil
-    var command: String? = nil
     var repo: String? = nil
     var source: String = "builtin"
     var manual: Bool = false
@@ -85,6 +84,23 @@ struct MigrationFile: Codable {
     let autostart: Bool?
 }
 
+/// Restore only the repository list. Never install or overwrite a local app during import.
+func restoreToolList(_ imported: [MigrationTool], keeping existing: [CatalogTool]) throws -> [CatalogTool] {
+    var result = existing
+    var repos = Set(existing.compactMap { $0.repo?.lowercased() })
+    for item in imported {
+        guard let parsed = AgentCLI.parseRepo(item.repo),
+              item.repo == "\(parsed.owner)/\(parsed.repo)" else {
+            throw AgentError.message("配置中包含无效的 GitHub 仓库：\(item.repo)")
+        }
+        guard repos.insert(item.repo.lowercased()).inserted else { continue }
+        result.append(CatalogTool(id: "repo:\(item.repo)", name: item.name, subtitle: "已收录",
+            icon: "shippingbox", group: item.group ?? "已收录", path: nil, repo: item.repo,
+            version: nil, sha256: nil, installedAt: nil, bundleID: nil))
+    }
+    return result
+}
+
 func expandedPath(_ path: String) -> String {
     (path as NSString).expandingTildeInPath
 }
@@ -93,7 +109,7 @@ func isInstalled(_ tool: Tool) -> Bool {
     InstalledApplications.url(for: tool) != nil
 }
 
-/// One scan per model refresh, shared by row state, launching and batch installs.
+/// One scan per model refresh, shared by row state and launching.
 enum InstalledApplications {
     private static var byName: [String: URL] = [:]
     private static var byBundleID: [String: URL] = [:]
@@ -207,9 +223,6 @@ enum Toolbox {
         Tool(id: "effie", name: "Effie", subtitle: "沉浸写作 / 大纲", icon: "pencil.line", group: "写作", path: "/Applications/Effie.app"),
         Tool(id: "siyuan", name: "思源笔记", subtitle: "设定集 / 人物卡 / 世界观", icon: "books.vertical", group: "写作", repo: "siyuan-note/siyuan"),
         Tool(id: "novelwriter", name: "novelWriter", subtitle: "小说工程 / 章节 / 情节线 · 需手动下载", icon: "list.bullet.rectangle", group: "写作", url: "https://github.com/saga-soft/novelWriter/releases", repo: "saga-soft/novelWriter", manual: true),
-        Tool(id: "typst", name: "Typst", subtitle: "排版出 PDF / 样书 · 需手动下载", icon: "doc.richtext", group: "写作", url: "https://github.com/typst/typst/releases", repo: "typst/typst", manual: true),
-        Tool(id: "doocsmd", name: "公众号排版 doocs/md", subtitle: "Markdown → 微信样式", icon: "doc.plaintext", group: "写作", url: "https://md.doocs.org/"),
-        Tool(id: "avoidai", name: "去 AI 味 avoid-ai-writing", subtitle: "AI Skill · 需配合 AI 助手", icon: "eraser", group: "写作", url: "https://github.com/conorbronsdon/avoid-ai-writing"),
 
         // AI / 开发
         Tool(id: "ccswitch", name: "CC Switch", subtitle: "一键切换 AI 供应商", icon: "arrow.triangle.2.circlepath", group: "AI / 开发", path: "~/Applications/CC Switch.app", repo: "farion1231/cc-switch"),
@@ -217,7 +230,6 @@ enum Toolbox {
         Tool(id: "dshdesktop", name: "DSH Desktop", subtitle: "桌面版", icon: "macwindow", group: "AI / 开发", path: "/Applications/DSH Desktop.app"),
         Tool(id: "githubdesktop", name: "GitHub Desktop", subtitle: "Git 图形客户端", icon: "arrow.triangle.branch", group: "AI / 开发", path: "/Applications/GitHub Desktop.app"),
         Tool(id: "openclaw", name: "OpenClaw", subtitle: "个人 AI 助理", icon: "sparkles", group: "AI / 开发", repo: "openclaw/openclaw"),
-        Tool(id: "markitdown", name: "MarkItDown", subtitle: "文档转 Markdown · 点击复制命令", icon: "doc.text.magnifyingglass", group: "AI / 开发", command: "markitdown "),
 
         // 系统小工具
         Tool(id: "maccy", name: "Maccy", subtitle: "剪贴板历史", icon: "doc.on.clipboard", group: "系统小工具", path: "~/Applications/Maccy.app", repo: "p0deje/Maccy"),
@@ -229,7 +241,7 @@ enum Toolbox {
         Tool(id: "keka", name: "Keka", subtitle: "压缩 / 解压", icon: "archivebox", group: "系统小工具", repo: "aonez/Keka"),
         Tool(id: "czkawka", name: "Czkawka", subtitle: "查重 / 清垃圾", icon: "trash.slash", group: "系统小工具", repo: "qarmin/czkawka"),
         Tool(id: "monitorcontrol", name: "MonitorControl", subtitle: "外接屏亮度", icon: "display", group: "系统小工具", repo: "MonitorControl/MonitorControl"),
-        Tool(id: "itsycal", name: "Itsycal", subtitle: "菜单栏日历", icon: "calendar", group: "系统小工具", url: "https://www.mowglii.com/itsycal/"),
+        Tool(id: "itsycal", name: "Itsycal", subtitle: "菜单栏日历", icon: "calendar", group: "系统小工具", url: "https://www.mowglii.com/itsycal/", manual: true),
         Tool(id: "alttab", name: "AltTab", subtitle: "窗口切换", icon: "rectangle.on.rectangle", group: "系统小工具", repo: "lwouis/alt-tab-macos"),
         Tool(id: "latest", name: "Latest", subtitle: "检查 App 更新", icon: "arrow.down.circle", group: "系统小工具", repo: "mangerlahn/Latest"),
     ]
@@ -238,15 +250,6 @@ enum Toolbox {
 // MARK: - 启动 / 本地 agent
 
 func launchTool(_ tool: Tool) {
-    if let cmd = tool.command {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(cmd, forType: .string)
-        NSSound(named: "Pop")?.play()
-        if let delegate = NSApp.delegate as? AppDelegate {
-            delegate.showToast("已复制命令：\(cmd)")
-        }
-        return
-    }
     if let app = InstalledApplications.url(for: tool) {
         NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration()) { _, error in
             guard let error = error else { return }
@@ -416,12 +419,12 @@ final class ToolRowView: NSView {
         let actionTitle: String
         if installed && updateVersion != nil { actionTitle = L10n.t("更新", "Update") }
         else if installed { actionTitle = L10n.t("打开", "Open") }
-        else if tool.command != nil { actionTitle = L10n.t("复制", "Copy") }
         else if tool.manual { actionTitle = L10n.t("下载", "Get") }
         else if tool.repo != nil { actionTitle = L10n.t("安装", "Install") }
         else if tool.url != nil { actionTitle = L10n.t("访问", "Visit") }
-        else { actionTitle = L10n.t("查找", "Find") }
+        else { actionTitle = L10n.t("未安装", "Missing") }
         let action = NSButton(title: actionTitle, target: self, action: #selector(primaryAction))
+        action.isEnabled = installed || tool.repo != nil || tool.url != nil
         action.isBordered = false
         action.font = .systemFont(ofSize: 11, weight: .medium)
         action.contentTintColor = .controlAccentColor
@@ -588,12 +591,6 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     private var didCheckUpdates = false
     private var overrides = Overrides()
     private var featuredTools: [Tool] = []
-    private var batchQueue: [Tool] = []
-    private var batchIndex = 0
-    private var batchSucceeded = 0
-    private var batchFailed: [String] = []
-    private var batchSkipped: [String] = []
-    private var batchCancelled = false
     private var visibleRows: [ToolRowView] = []
     private var selectedIndex: Int?
     private var keyMonitor: Any?
@@ -1109,7 +1106,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         if let index = visibleRows.firstIndex(where: { $0.tool.id == tool.id }) {
             selectRow(at: index)
         }
-        if isInstalled(tool) || tool.command != nil {
+        if isInstalled(tool) {
             launchTool(tool)
             return
         }
@@ -1125,8 +1122,8 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             if let url = URL(string: link) { NSWorkspace.shared.open(url) }
             return
         }
-        // 没有仓库信息：让本地 agent 按名字搜索后直接装
-        startInstall(target: tool.name)
+        showError(L10n.t("尚未安装该应用", "App not installed"),
+                  detail: L10n.t("请先从该应用的官方渠道安装。", "Install this app from its official source first."))
     }
 
     @objc private func addRepo() {
@@ -1146,46 +1143,28 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     }
 
     @objc private func showMoreMenu(_ sender: NSButton) {
+        makeMoreMenu().popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
+    }
+
+    func makeMoreMenu() -> NSMenu {
         let menu = NSMenu()
         func add(_ title: String, _ action: Selector) {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
             item.target = self
             menu.addItem(item)
         }
-        add(L10n.t("批量安装未安装工具…", "Batch install missing tools…"), #selector(batchInstall))
         add(L10n.t("检查更新…", "Check for updates…"), #selector(checkSparkleUpdates))
-        add(L10n.t("中英翻译…", "CN ↔ EN translator…"), #selector(showTranslatorWindow))
-        add(Translator.onlineEnabled ? L10n.t("关闭在线翻译（MyMemory）", "Disable online translation (MyMemory)") : L10n.t("开启在线翻译（MyMemory）", "Enable online translation (MyMemory)"), #selector(toggleOnlineTranslation))
-        add(L10n.t("打开辅助功能设置…", "Open Accessibility settings…"), #selector(openAccessibilitySettings))
-        add(L10n.t("GitHub 仓库 / 反馈…", "GitHub repo / feedback…"), #selector(openGitHubRepo))
-        menu.addItem(NSMenuItem.separator())
-        add(L10n.t("导出配置…", "Export settings…"), #selector(exportConfig))
-        add(L10n.t("导入配置…", "Import settings…"), #selector(importConfig))
         let login = NSMenuItem(title: L10n.t("开机自启", "Launch at login"), action: #selector(toggleAutostartMenu), keyEquivalent: "")
         login.target = self
         login.state = autostartEnabled() ? .on : .off
         menu.addItem(login)
         menu.addItem(.separator())
+        add(L10n.t("导出配置…", "Export settings…"), #selector(exportConfig))
+        add(L10n.t("导入配置…", "Import settings…"), #selector(importConfig))
+        add(L10n.t("GitHub 仓库 / 反馈…", "GitHub repo / feedback…"), #selector(openGitHubRepo))
+        menu.addItem(.separator())
         add(L10n.t("退出", "Quit"), #selector(quitApp))
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
-    }
-
-    @objc private func toggleOnlineTranslation() {
-        let enabling = !Translator.onlineEnabled
-        if enabling {
-            let alert = NSAlert()
-            alert.messageText = "开启在线翻译？"
-            alert.informativeText = "翻译文本会发送到 MyMemory（免费公共 API）用于翻译，可能包含界面文字。只在内置词库不够用时开启。"
-            alert.addButton(withTitle: "开启")
-            alert.addButton(withTitle: "取消")
-            if alert.runModal() != .alertFirstButtonReturn { return }
-        }
-        Translator.onlineEnabled = enabling
-        rebuild()
-    }
-
-    @objc private func showTranslatorWindow() {
-        (NSApp.delegate as? AppDelegate)?.showTranslator()
+        return menu
     }
 
     @objc private func openGitHubRepo() {
@@ -1194,98 +1173,8 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         }
     }
 
-    @objc private func openAccessibilitySettings() {
-        (NSApp.delegate as? AppDelegate)?.openAccessibilitySettings()
-    }
-
     @objc private func checkSparkleUpdates() {
         (NSApp.delegate as? AppDelegate)?.checkForUpdatesSparkle()
-    }
-
-    @objc private func batchInstall() {
-        let pending = allTools.filter { !isInstalled($0) && $0.repo != nil }
-        let manualTargets = pending.filter { $0.manual }
-        let targets = pending.filter { !$0.manual }
-        guard !targets.isEmpty else {
-            if manualTargets.isEmpty {
-                showError(L10n.t("没有待安装的工具", "Nothing to install"), detail: L10n.t("所有带 GitHub 仓库的工具都已经安装。", "Every tool with a GitHub repo is already installed."))
-            } else {
-                showError(L10n.t("剩下的都需要手动下载", "The rest need manual downloads"), detail: L10n.t("需手动下载：", "Manual download: ") + manualTargets.map { $0.name }.joined(separator: ", "))
-            }
-            return
-        }
-        let alert = NSAlert()
-        alert.messageText = L10n.t("批量安装 \(targets.count) 个工具？", "Batch install \(targets.count) tools?")
-        var detail = L10n.t("会按顺序下载、自检、安装，耗时取决于网速，过程中可以取消。", "Downloads, verifies and installs them one by one. This can take a while and can be cancelled.")
-        if !manualTargets.isEmpty {
-            detail += "\n\n" + L10n.t("将跳过 \(manualTargets.count) 个需手动下载的：", "Skipping \(manualTargets.count) manual-download tools: ") + manualTargets.map { $0.name }.joined(separator: ", ")
-        }
-        alert.informativeText = detail
-        alert.addButton(withTitle: "开始")
-        alert.addButton(withTitle: "取消")
-        if alert.runModal() == .alertFirstButtonReturn {
-            batchSkipped = manualTargets.map { $0.name }
-            startBatch(targets)
-        }
-    }
-
-    private func startBatch(_ tools: [Tool]) {
-        guard !tools.isEmpty, progressPanel == nil else { return }
-        batchQueue = tools
-        batchIndex = 0
-        batchSucceeded = 0
-        batchFailed = []
-        batchSkipped = []
-        batchCancelled = false
-        runNextBatch()
-    }
-
-    private func runNextBatch() {
-        guard !batchCancelled else { finishBatch(); return }
-        guard batchIndex < batchQueue.count else { finishBatch(); return }
-        let tool = batchQueue[batchIndex]
-        let generation = UUID()
-        installGeneration = generation
-        showProgress(L10n.t("批量安装 \(batchIndex + 1)/\(batchQueue.count)：\(tool.name)…", "Installing \(batchIndex + 1)/\(batchQueue.count): \(tool.name)…"))
-        currentProcess = AgentRunner.run(["install", tool.repo ?? tool.name]) { [weak self] output in
-            guard let self = self, self.installGeneration == generation else { return }
-            self.currentProcess = nil
-            self.progressPanel?.close()
-            self.progressPanel = nil
-            if let data = self.lastJSON(output), (data["ok"] as? Bool) == true {
-                self.batchSucceeded += 1
-            } else {
-                let reason = (self.lastJSON(output)?["error"] as? String) ?? "未知错误"
-                self.batchFailed.append("\(tool.name)：\(reason)")
-                if reason.contains("限额") { self.batchCancelled = true }
-            }
-            self.batchIndex += 1
-            self.runNextBatch()
-        }
-    }
-
-    private func finishBatch() {
-        let total = batchQueue.count
-        let failed = batchFailed
-        let skipped = batchSkipped
-        batchQueue = []
-        batchIndex = 0
-        catalogTools = loadCatalogTools()
-        rebuild()
-        let alert = NSAlert()
-        alert.messageText = batchCancelled ? L10n.t("批量安装已停止", "Batch install stopped") : L10n.t("批量安装完成", "Batch install finished")
-        var lines = [L10n.t("成功 \(batchSucceeded) 个 / 共 \(total) 个", "Succeeded \(batchSucceeded) / \(total)")]
-        if !failed.isEmpty {
-            lines.append(L10n.t("失败 \(failed.count) 个：", "Failed \(failed.count):"))
-            lines.append(contentsOf: failed.prefix(5))
-            if failed.count > 5 { lines.append("…") }
-        }
-        if !skipped.isEmpty {
-            lines.append(L10n.t("跳过 \(skipped.count) 个需手动下载：", "Skipped \(skipped.count) manual downloads: ") + skipped.prefix(4).joined(separator: ", "))
-        }
-        alert.informativeText = lines.joined(separator: "\n")
-        alert.addButton(withTitle: "好")
-        present(alert, result: nil)
     }
 
     @objc private func exportConfig() {
@@ -1296,7 +1185,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         var seen = Set<String>()
         var tools: [MigrationTool] = []
-        for tool in allTools where isInstalled(tool) {
+        for tool in allTools where isInstalled(tool) || tool.source == "catalog" || overrides.favorites.contains(tool.id) {
             guard let repo = tool.repo, !seen.contains(repo) else { continue }
             seen.insert(repo)
             tools.append(MigrationTool(repo: repo, name: tool.name, group: tool.group))
@@ -1304,7 +1193,7 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         let file = MigrationFile(version: 1, tools: tools, overrides: overrides, autostart: autostartEnabled())
         do {
             let data = try JSONEncoder().encode(file)
-            try data.write(to: url)
+            try data.write(to: url, options: .atomic)
             showError("已导出", detail: "\(tools.count) 个工具 + 重命名/分类/自启设置\n\(url.path)")
         } catch {
             showError("导出失败", detail: error.localizedDescription)
@@ -1324,23 +1213,32 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
         }
         let alert = NSAlert()
         alert.messageText = "导入 \(file.tools.count) 个工具？"
-        alert.informativeText = "会恢复重命名/分类/自启设置，并依次安装缺少的工具。"
+        alert.informativeText = "恢复收藏、名称、分类、排序、工具清单及开机自启设置。缺少的应用需要手动选择安装，不会批量下载安装。"
         alert.addButton(withTitle: "导入")
         alert.addButton(withTitle: "取消")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        if let imported = file.overrides {
-            overrides = imported
-            saveOverrides(overrides)
+        do {
+            let catalogURL = URL(fileURLWithPath: catalogPath)
+            let existing: [CatalogTool]
+            if FileManager.default.fileExists(atPath: catalogPath) {
+                existing = try JSONDecoder().decode(CatalogFile.self, from: Data(contentsOf: catalogURL)).tools
+            } else { existing = [] }
+            let restored = try restoreToolList(file.tools, keeping: existing)
+            let encoded = try JSONEncoder().encode(CatalogFile(tools: restored))
+            try FileManager.default.createDirectory(at: catalogURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try encoded.write(to: catalogURL, options: .atomic)
+            if let imported = file.overrides {
+                overrides = imported
+                saveOverrides(overrides)
+            }
+            if let autostart = file.autostart {
+                AgentRunner.run(["autostart", autostart ? "on" : "off", Bundle.main.bundlePath]) { _ in }
+            }
+            catalogTools = loadCatalogTools()
+            rebuild()
+        } catch {
+            showError(L10n.t("导入失败", "Import failed"), detail: error.localizedDescription)
         }
-        if let autostart = file.autostart {
-            AgentRunner.run(["autostart", autostart ? "on" : "off", Bundle.main.bundlePath]) { _ in }
-        }
-        rebuild()
-        let tools = file.tools.map { item in
-            Tool(id: "repo:\(item.repo)", name: item.name, subtitle: "迁移导入", icon: "shippingbox",
-                 group: item.group ?? "已收录", repo: item.repo, source: "catalog")
-        }
-        startBatch(tools)
     }
 
     private func currentCategoryNames() -> [String] {
@@ -1422,12 +1320,10 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
     @objc private func cancelInstall() {
         installGeneration = UUID()
         installCancelled = true
-        batchCancelled = true
         currentProcess?.terminate()
         currentProcess = nil
         progressPanel?.close()
         progressPanel = nil
-        if !batchQueue.isEmpty { finishBatch() }
     }
 
     private func showProgress(_ text: String) {
@@ -1479,10 +1375,6 @@ final class SidebarViewController: NSViewController, NSSearchFieldDelegate {
             }
             if let sha = result.sha256 { lines.append("SHA-256：\(sha.prefix(16))…") }
             if let path = result.path { lines.append("路径：\(path)") }
-            let permissionApps = ["Maccy", "Ice", "Espanso", "Rectangle", "AltTab", "MonitorControl"]
-            if let name = result.name, permissionApps.contains(name) {
-                lines.append("提示：该工具需要「辅助功能」权限，可在 系统设置 → 隐私与安全性 → 辅助功能 中授权")
-            }
             alert.informativeText = lines.joined(separator: "\n")
             alert.addButton(withTitle: "好")
         } else {
@@ -1728,17 +1620,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var statusItem: NSStatusItem?
     var ballWindow: NSPanel?
     var updaterController: SPUStandardUpdaterController!
-    var translatorWindow: TranslatorWindowController?
     private var hotKeyRef: EventHotKeyRef?
     private var hotKeyHandler: EventHandlerRef?
     private let silentMode = CommandLine.arguments.contains("--silent")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(silentMode ? .accessory : .regular)
-        if CommandLine.arguments.contains("--translator") {
-            let showWork = DispatchWorkItem { [weak self] in self?.showTranslator() }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: showWork)
-        }
         if CommandLine.arguments.contains("--sparkle-check") {
             let work = DispatchWorkItem { [weak self] in self?.checkForUpdatesSparkle() }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
@@ -1757,70 +1644,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
-    func showTranslator() {
-        if translatorWindow == nil {
-            translatorWindow = TranslatorWindowController()
-        }
-        translatorWindow?.showWindow(nil)
-        translatorWindow?.window?.center()
-        translatorWindow?.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
     func showLaunchError(appName: String, detail: String) {
         let alert = NSAlert()
-        alert.messageText = "无法打开 \(appName)"
-        alert.informativeText = "\(detail)\n\n可能是辅助功能权限没授权，或被 Gatekeeper 拦截。"
-        alert.addButton(withTitle: "打开辅助功能设置")
-        alert.addButton(withTitle: "好")
-        if alert.runModal() == .alertFirstButtonReturn {
-            openAccessibilitySettings()
-        }
-    }
-
-    func openAccessibilitySettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-            NSWorkspace.shared.open(url)
-        }
-    }
-
-    func showToast(_ message: String) {
-        let width: CGFloat = 300
-        let height: CGFloat = 44
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: width, height: height),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.level = .floating
-        panel.hasShadow = true
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-
-        let effect = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: width, height: height))
-        effect.material = .hudWindow
-        effect.blendingMode = .behindWindow
-        effect.state = .active
-        effect.wantsLayer = true
-        effect.layer?.cornerRadius = 12
-        effect.layer?.masksToBounds = true
-
-        let label = NSTextField(labelWithString: message)
-        label.font = .systemFont(ofSize: 12)
-        label.alignment = .center
-        label.frame = NSRect(x: 12, y: (height - 18) / 2, width: width - 24, height: 18)
-        effect.addSubview(label)
-        panel.contentView = effect
-
-        if let screen = NSScreen.main {
-            let frame = screen.visibleFrame
-            panel.setFrameOrigin(NSPoint(x: frame.midX - width / 2, y: frame.minY + 90))
-        }
-        panel.orderFront(nil)
-        let work = DispatchWorkItem { panel.orderOut(nil) }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6, execute: work)
+        alert.messageText = L10n.t("无法打开 \(appName)", "Could not open \(appName)")
+        alert.informativeText = detail
+        alert.addButton(withTitle: L10n.t("好", "OK"))
+        alert.runModal()
     }
 
     func registerHotKey() {

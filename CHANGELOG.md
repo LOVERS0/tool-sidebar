@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.11.0 — 2026-11-25
+- Missing apps without an explicit source no longer guess a GitHub repository for installation.
+- Remove the built-in online translator, offline substitution window, translation network code, and translator screenshot. Legacy translation CLI flags now return a removal message instead of opening the GUI.
+- Remove install-all and automatic batch installation during configuration import. Restore missing repositories as uninstalled catalog entries while preserving existing local app metadata.
+- Remove the auxiliary Accessibility settings shortcut, permission guesses on launch errors, clipboard-copy command support and four non-app defaults (Typst, doocs/md, avoid-ai-writing, MarkItDown).
+- Keep search, favorites, categories, keyboard shortcuts, the floating ball, configuration backups and individual app installation/update/removal. Preserve old backup compatibility.
+- Simplify the menu and refresh documentation and the native sidebar screenshot.
+
 ## 1.10.0 — 2026-11-24
 - Reuse list rows while searching; add All / Installed / Favorites filters and favorite actions.
 - Show explicit Open / Install / Update / Get / Visit / Copy actions and larger subtitles. Move launch-at-login and Quit into the menu.
